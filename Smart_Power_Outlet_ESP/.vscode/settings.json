@@ -1,0 +1,19 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.openOcdConfigs": [
+    "board/esp32p4-builtin.cfg"
+  ],
+  "idf.portWin": "detect",
+  "idf.currentSetup": "C:\\esp\\v5.5.3\\esp-idf",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32p4"
+  },
+  "clangd.path": "C:\\Espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=d:\\GitHub\\Smart_Power_Outlet\\Smart_Power_Outlet_ESP\\build"
+  ],
+  "idf.port": "/dev/ttyUSB0",
+  "idf.flashType": "UART"
+}
