@@ -1,167 +1,109 @@
-#include <stdio.h>
 #include <string.h>
-#include <stdbool.h>
+
+#ifndef CONFIG_WIFI_RMT_STATIC_RX_BUFFER_NUM
+#define CONFIG_WIFI_RMT_STATIC_RX_BUFFER_NUM 16
+#define CONFIG_WIFI_RMT_DYNAMIC_RX_BUFFER_NUM 64
+#define CONFIG_WIFI_RMT_TX_BUFFER_TYPE 0
+#define CONFIG_WIFI_RMT_DYNAMIC_RX_MGMT_BUF 1
+#define CONFIG_WIFI_RMT_ESPNOW_MAX_ENCRYPT_NUM 7
+#endif
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/task.h"
-#include "freertos/queue.h"
-#include "driver/gpio.h"
-#include "driver/uart.h"
+#include "esp_event.h"
 #include "esp_log.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
 #include "nvs_flash.h"
-#include "cJSON.h"
 
-#define RELAY_GPIO              20
-#define UART_PORT               UART_NUM_1
-#define UART_TX_PIN             17
-#define UART_RX_PIN             18
-#define UART_BAUD               115200
-#define UART_BUF_SIZE           1024
-#define TX_QUEUE_LEN            8
-#define TX_MSG_MAX              192
+// Simple Wi‑Fi station test for jc-esp32p4-m3 (ESP32-P4 + ESP32-C6).
+// Replace the SSID/PASSWORD below with your AP credentials before building.
 
-#define TOPIC_CMD               "home/socket/cmd"
-#define TOPIC_STATUS            "home/socket/status"
+#define WIFI_SSID      "I2"
+#define WIFI_PASSWORD  "abcd1232"
+#define WIFI_MAX_RETRY 5
 
-static const char *TAG = "p4";
+static EventGroupHandle_t s_wifi_event_group;
+static int s_retry_count = 0;
+static const int WIFI_CONNECTED_BIT = BIT0;
+static const int WIFI_FAIL_BIT = BIT1;
+static const char *TAG = "wifi-test";
 
-static QueueHandle_t tx_queue;
-static bool relay_on = false;
-
-static void relay_set(bool on)
+static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-	relay_on = on;
-	gpio_set_level(RELAY_GPIO, on ? 1 : 0);
+	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+		esp_wifi_connect();
+	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+		if (s_retry_count < WIFI_MAX_RETRY) {
+			s_retry_count++;
+			ESP_LOGI(TAG, "retry %d connecting to AP", s_retry_count);
+			esp_wifi_connect();
+		} else {
+			xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+		}
+	} else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+		ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+		ESP_LOGI(TAG, "got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+		s_retry_count = 0;
+		xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+	}
 }
 
-static void gpio_init_relay(void)
+static void wifi_init_sta(void)
 {
-	gpio_config_t io = {
-		.pin_bit_mask = 1ULL << RELAY_GPIO,
-		.mode = GPIO_MODE_OUTPUT,
-		.pull_up_en = GPIO_PULLUP_DISABLE,
-		.pull_down_en = GPIO_PULLDOWN_ENABLE,
-		.intr_type = GPIO_INTR_DISABLE,
+	s_wifi_event_group = xEventGroupCreate();
+
+	ESP_ERROR_CHECK(esp_netif_init());
+	ESP_ERROR_CHECK(esp_event_loop_create_default());
+	esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
+    if (sta_netif == NULL) {
+        ESP_LOGE(TAG, "Failed to create default WiFi STA interface");
+        abort();
+    }
+
+	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+	ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+	ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
+	ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
+
+	wifi_config_t wifi_config = {
+		.sta = {
+			.ssid = WIFI_SSID,
+			.password = WIFI_PASSWORD,
+			.threshold.authmode = WIFI_AUTH_WPA2_PSK,
+			.sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
+		},
 	};
-	gpio_config(&io);
-	relay_set(false);
-}
 
-static void uart_init(void)
-{
-	uart_config_t cfg = {
-		.baud_rate = UART_BAUD,
-		.data_bits = UART_DATA_8_BITS,
-		.parity = UART_PARITY_DISABLE,
-		.stop_bits = UART_STOP_BITS_1,
-		.flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-	};
+	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+	ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+	ESP_ERROR_CHECK(esp_wifi_start());
 
-	uart_driver_install(UART_PORT, UART_BUF_SIZE, UART_BUF_SIZE, 0, NULL, 0);
-	uart_param_config(UART_PORT, &cfg);
-	uart_set_pin(UART_PORT, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-}
+	EventBits_t bits = xEventGroupWaitBits(
+		s_wifi_event_group,
+		WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+		pdFALSE,
+		pdFALSE,
+		portMAX_DELAY);
 
-static void enqueue_status_publish(void)
-{
-	char msg[TX_MSG_MAX];
-	int n = snprintf(msg, sizeof(msg),
-					 "{\"type\":\"pub\",\"topic\":\"%s\",\"payload\":\"%s\"}\n",
-					 TOPIC_STATUS, relay_on ? "ON" : "OFF");
-	if (n > 0 && n < (int)sizeof(msg)) {
-		xQueueSend(tx_queue, msg, 0);
-	}
-}
-
-static void handle_rx_line(const char *line)
-{
-	cJSON *root = cJSON_Parse(line);
-	if (!root) {
-		ESP_LOGW(TAG, "JSON parse fail: %s", line);
-		return;
+	if (bits & WIFI_CONNECTED_BIT) {
+		ESP_LOGI(TAG, "connected to SSID:%s", WIFI_SSID);
+	} else if (bits & WIFI_FAIL_BIT) {
+		ESP_LOGE(TAG, "failed to connect to SSID:%s", WIFI_SSID);
+	} else {
+		ESP_LOGE(TAG, "unexpected event");
 	}
 
-	const cJSON *type = cJSON_GetObjectItem(root, "type");
-	const cJSON *topic = cJSON_GetObjectItem(root, "topic");
-	const cJSON *payload = cJSON_GetObjectItem(root, "payload");
-
-	if (cJSON_IsString(type) && cJSON_IsString(topic) && cJSON_IsString(payload)) {
-		if (strcmp(type->valuestring, "sub") == 0 && strcmp(topic->valuestring, TOPIC_CMD) == 0) {
-			bool on = (strcasecmp(payload->valuestring, "ON") == 0);
-			relay_set(on);
-			enqueue_status_publish();
-		}
-	}
-
-	cJSON_Delete(root);
-}
-
-static void uart_rx_task(void *arg)
-{
-	uint8_t buf[UART_BUF_SIZE];
-	size_t offset = 0;
-	while (1) {
-		int len = uart_read_bytes(UART_PORT, buf + offset, sizeof(buf) - offset - 1, pdMS_TO_TICKS(100));
-		if (len > 0) {
-			offset += len;
-			buf[offset] = '\0';
-
-			// Process line-delimited JSON
-			char *start = (char *)buf;
-			char *newline;
-			while ((newline = strchr(start, '\n')) != NULL) {
-				*newline = '\0';
-				if (strlen(start) > 0) {
-					handle_rx_line(start);
-				}
-				start = newline + 1;
-			}
-
-			// Move remaining partial data to buffer start
-			offset = strlen(start);
-			memmove(buf, start, offset);
-		}
-	}
-}
-
-static void uart_tx_task(void *arg)
-{
-	char msg[TX_MSG_MAX];
-	while (1) {
-		if (xQueueReceive(tx_queue, msg, portMAX_DELAY) == pdTRUE) {
-			int len = strlen(msg);
-			uart_write_bytes(UART_PORT, msg, len);
-			ESP_LOGI(TAG, "TX -> C6: %s", msg);
-		}
-	}
-}
-
-static void send_bootstrap(void)
-{
-	// Request C6 to join WiFi + connect MQTT and subscribe to cmd topic
-	const char *ssid = "I2";
-	const char *pwd = "abcd1232";
-	const char *mqtt_host = "broker.hivemq.com";
-	int mqtt_port = 1883;
-
-	char msg[TX_MSG_MAX];
-	int n = snprintf(msg, sizeof(msg),
-					 "{\"type\":\"conn\",\"ssid\":\"%s\",\"pwd\":\"%s\",\"mqtt_host\":\"%s\",\"port\":%d,\"user\":\"\",\"pass\":\"\",\"sub\":\"%s\"}\n",
-					 ssid, pwd, mqtt_host, mqtt_port, TOPIC_CMD);
-	if (n > 0 && n < (int)sizeof(msg)) {
-		xQueueSend(tx_queue, msg, 0);
-	}
+	ESP_ERROR_CHECK(esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler));
+	ESP_ERROR_CHECK(esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler));
+	vEventGroupDelete(s_wifi_event_group);
 }
 
 void app_main(void)
 {
-	nvs_flash_init();
-	gpio_init_relay();
-	uart_init();
-
-	tx_queue = xQueueCreate(TX_QUEUE_LEN, TX_MSG_MAX);
-	xTaskCreate(uart_rx_task, "uart_rx", 4096, NULL, 10, NULL);
-	xTaskCreate(uart_tx_task, "uart_tx", 3072, NULL, 9, NULL);
-
-	send_bootstrap();
+	// NVS is needed for Wi‑Fi driver storage.
+	ESP_ERROR_CHECK(nvs_flash_init());
+	wifi_init_sta();
 }
