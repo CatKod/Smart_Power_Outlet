@@ -1,6 +1,6 @@
 /*
- * Demo firmware skeleton for ESP32-P4 (host) + ESP32-C6 (ESP-Hosted co-processor)
- * Features: WiFi via ESP-Hosted, MQTT control, relay on GPIO20
+ * Smart Power Outlet - ESP32-P4 (Host) + ESP32-C6 (Co-processor via ESP-Hosted)
+ * Features: WiFi Captive Portal Provisioning, MQTT control, relay on GPIO20
  */
 
 #include <assert.h>
@@ -21,11 +21,7 @@
 #include "esp_wifi_remote.h"
 
 #include "mqtt_client.h"
-
-#define WIFI_SSID           "Tang2"
-#define WIFI_PASS           "oanhvinh"
-#define WIFI_SSID2		  	"."
-#define WIFI_PASS2		  	"912346780"
+#include "wifi_prov.h"
 
 #define MQTT_URI            "mqtt://broker.hivemq.com:1883"
 #define MQTT_TOPIC_CMD      "home/socket/cmd"
@@ -40,8 +36,6 @@ typedef enum {
 static const char *TAG = "smart_socket";
 static QueueHandle_t s_relay_queue;
 static esp_mqtt_client_handle_t s_mqtt_client;
-static bool s_failover_attempted = false;
-static void wifi_set_credentials(const char *ssid, const char *pass);
 
 static void relay_gpio_init(void)
 {
@@ -150,61 +144,16 @@ static void mqtt_stop(void)
 	s_mqtt_client = NULL;
 }
 
-static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+static void on_wifi_connected(void)
 {
-	(void)arg;
-	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-		ESP_LOGI(TAG, "WiFi start, connecting");
-		esp_wifi_remote_connect();
-	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-		ESP_LOGW(TAG, "WiFi disconnected, retrying");
-		mqtt_stop();
-		if (!s_failover_attempted) {
-			s_failover_attempted = true;
-			ESP_LOGW(TAG, "Switching to backup WiFi SSID");
-			wifi_set_credentials(WIFI_SSID2, WIFI_PASS2);
-		}
-		esp_wifi_remote_connect();
-	}
+	ESP_LOGI(TAG, "WiFi connected, starting MQTT");
+	mqtt_start();
 }
 
-static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+static void on_wifi_disconnected(void)
 {
-	(void)arg;
-	if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-		ip_event_got_ip_t *ip = (ip_event_got_ip_t *)event_data;
-		ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&ip->ip_info.ip));
-		mqtt_start();
-	}
-}
-
-static void wifi_set_credentials(const char *ssid, const char *pass)
-{
-	wifi_config_t wifi_config = { 0 };
-	strlcpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
-	strlcpy((char *)wifi_config.sta.password, pass, sizeof(wifi_config.sta.password));
-	wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-	wifi_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
-
-	ESP_ERROR_CHECK(esp_wifi_remote_set_config(WIFI_IF_STA, &wifi_config));
-}
-
-static void wifi_init_sta(void)
-{
-	ESP_ERROR_CHECK(esp_netif_init());
-	ESP_ERROR_CHECK(esp_event_loop_create_default());
-
-	esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
-    assert(sta_netif);
-
-	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-	ESP_ERROR_CHECK(esp_wifi_remote_init(&cfg));
-	ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
-	ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &ip_event_handler, NULL, NULL));
-
-	ESP_ERROR_CHECK(esp_wifi_remote_set_mode(WIFI_MODE_STA));
-	wifi_set_credentials(WIFI_SSID, WIFI_PASS);
-	ESP_ERROR_CHECK(esp_wifi_remote_start());
+	ESP_LOGW(TAG, "WiFi disconnected, stopping MQTT");
+	mqtt_stop();
 }
 
 static void nvs_init(void)
@@ -224,10 +173,11 @@ void app_main(void)
 	s_relay_queue = xQueueCreate(4, sizeof(relay_cmd_t));
 	xTaskCreate(relay_task, "relay_task", 2048, NULL, 5, NULL);
 
-	/* Initialize ESP-Hosted transport (SPI/SDIO config is taken from defaults/Kconfig) */
+	/* Initialize ESP-Hosted transport (SDIO communication with ESP32-C6) */
 	ESP_ERROR_CHECK(esp_hosted_init());
 
-	wifi_init_sta();
+	/* Start WiFi Provisioning with callbacks for MQTT control */
+	ESP_ERROR_CHECK(wifi_prov_start(on_wifi_connected, on_wifi_disconnected));
 
-	ESP_LOGI(TAG, "Smart outlet demo started");
+	ESP_LOGI(TAG, "Smart outlet started with WiFi Provisioning");
 }
