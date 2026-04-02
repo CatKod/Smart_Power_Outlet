@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../mqtt_sever_config.dart';
 import '../services/mqtt_service.dart';
 import '../services/provisioning_service.dart';
 import '../services/connection_status.dart';
@@ -9,6 +10,8 @@ final mqttServiceProvider = Provider<MqttService>((ref) {
   final service = MqttService(
     broker: 'mqtt.toolhub.app',
     port: 1883,
+    username: mqttUsername,
+    password: mqttPassword,
   );
   
   // Auto-connect when app starts
