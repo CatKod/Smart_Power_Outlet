@@ -381,3 +381,31 @@ esp_err_t wifi_prov_start(wifi_connected_cb_t connected_cb, wifi_disconnected_cb
 
     return ESP_OK;
 }
+
+esp_err_t wifi_prov_erase_credentials(void)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(WIFI_PROV_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS open failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = nvs_erase_key(handle, WIFI_PROV_KEY_SSID);
+    if (err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND) {
+        err = nvs_erase_key(handle, WIFI_PROV_KEY_PASS);
+    }
+    if (err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND) {
+        err = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+    
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi credentials erased from NVS");
+    } else {
+        ESP_LOGE(TAG, "Failed to erase credentials: %s", esp_err_to_name(err));
+    }
+    
+    return err;
+}

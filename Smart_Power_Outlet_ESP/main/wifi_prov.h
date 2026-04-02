@@ -18,6 +18,9 @@ typedef void (*wifi_disconnected_cb_t)(void);
 /* Launch provisioning with callbacks: try STA with stored credentials, fail over to AP + captive portal when needed */
 esp_err_t wifi_prov_start(wifi_connected_cb_t connected_cb, wifi_disconnected_cb_t disconnected_cb);
 
+/* Erase stored WiFi credentials from NVS */
+esp_err_t wifi_prov_erase_credentials(void);
+
 #ifdef __cplusplus
 }
 #endif
