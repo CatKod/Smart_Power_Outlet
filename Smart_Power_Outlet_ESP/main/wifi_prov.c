@@ -31,7 +31,8 @@
 #define CONFIG_WIFI_RMT_ESPNOW_MAX_ENCRYPT_NUM 7
 #endif
 
-#include "esp_wifi.h"
+/* CRITICAL: Use ESP-Hosted Remote WiFi API instead of standard esp_wifi.h */
+#include "esp_wifi_remote.h"
 #include "esp_wifi_default_config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -54,6 +55,10 @@ static httpd_handle_t s_httpd = NULL;
 static esp_netif_t *s_sta_netif = NULL;
 static esp_netif_t *s_ap_netif = NULL;
 static bool s_connected = false;
+
+/* Callbacks to notify main app about WiFi events */
+static wifi_connected_cb_t s_connected_cb = NULL;
+static wifi_disconnected_cb_t s_disconnected_cb = NULL;
 
 static esp_err_t wifi_switch_to_ap(void);
 
@@ -262,7 +267,7 @@ static esp_err_t wifi_switch_to_ap(void)
         xTimerStop(s_failover_timer, 0);
     }
 
-    esp_wifi_stop();
+    esp_wifi_remote_stop();
 
     if (!s_ap_netif) {
         s_ap_netif = esp_netif_create_default_wifi_ap();
@@ -275,9 +280,9 @@ static esp_err_t wifi_switch_to_ap(void)
     ap_cfg.ap.max_connection = 4;
     ap_cfg.ap.authmode = WIFI_AUTH_OPEN;
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_cfg));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_remote_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_remote_set_config(WIFI_IF_AP, &ap_cfg));
+    ESP_ERROR_CHECK(esp_wifi_remote_start());
 
     ESP_LOGW(TAG, "Switched to AP mode, SSID='%s', connect to http://192.168.4.1", WIFI_PROV_AP_SSID);
 
@@ -290,23 +295,31 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     (void)arg;
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         ESP_LOGI(TAG, "WiFi STA start, connecting");
-        esp_wifi_connect();
+        esp_wifi_remote_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *disc = (wifi_event_sta_disconnected_t *)event_data;
         ESP_LOGW(TAG, "STA disconnected, reason=%d", disc->reason);
         if (s_connected) {
             s_connected = false;
+            /* Notify app that WiFi disconnected */
+            if (s_disconnected_cb) {
+                s_disconnected_cb();
+            }
         }
         if (s_failover_timer) {
             xTimerStart(s_failover_timer, 0);
         }
-        esp_wifi_connect();
+        esp_wifi_remote_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ip = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&ip->ip_info.ip));
         s_connected = true;
         if (s_failover_timer) {
             xTimerStop(s_failover_timer, 0);
+        }
+        /* Notify app that WiFi connected */
+        if (s_connected_cb) {
+            s_connected_cb();
         }
     }
 }
@@ -323,20 +336,24 @@ static esp_err_t wifi_start_sta(const char *ssid, const char *pass)
     sta_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     sta_cfg.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_cfg));
+    ESP_ERROR_CHECK(esp_wifi_remote_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_remote_set_config(WIFI_IF_STA, &sta_cfg));
 
     if (s_failover_timer) {
         xTimerStart(s_failover_timer, 0);
     }
 
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_remote_start());
     ESP_LOGI(TAG, "Connecting to ssid='%s'", ssid);
     return ESP_OK;
 }
 
-esp_err_t wifi_prov_start(void)
+esp_err_t wifi_prov_start(wifi_connected_cb_t connected_cb, wifi_disconnected_cb_t disconnected_cb)
 {
+    /* Store callbacks */
+    s_connected_cb = connected_cb;
+    s_disconnected_cb = disconnected_cb;
+
     ESP_ERROR_CHECK(nvs_flash_init());
     if (!s_failover_timer) {
         s_failover_timer = xTimerCreate("failover", pdMS_TO_TICKS(WIFI_FAILOVER_TIMEOUT_MS), pdFALSE, NULL, failover_timer_cb);
@@ -345,8 +362,9 @@ esp_err_t wifi_prov_start(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
+    /* CRITICAL: Use ESP-Hosted Remote WiFi API instead of local esp_wifi_init */
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_wifi_remote_init(&cfg));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
 
@@ -362,4 +380,32 @@ esp_err_t wifi_prov_start(void)
     }
 
     return ESP_OK;
+}
+
+esp_err_t wifi_prov_erase_credentials(void)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(WIFI_PROV_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS open failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = nvs_erase_key(handle, WIFI_PROV_KEY_SSID);
+    if (err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND) {
+        err = nvs_erase_key(handle, WIFI_PROV_KEY_PASS);
+    }
+    if (err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND) {
+        err = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+    
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi credentials erased from NVS");
+    } else {
+        ESP_LOGE(TAG, "Failed to erase credentials: %s", esp_err_to_name(err));
+    }
+    
+    return err;
 }
