@@ -24,12 +24,13 @@
 #include "mqtt_client.h"
 #include "wifi_prov.h"
 
-#define MQTT_URI            "mqtt://mqtt.toolhub.app:1883"
-#define MQTT_TOPIC_CMD      "home/socket/cmd"
-#define MQTT_TOPIC_STATUS   "home/socket/status"
-#define RELAY_GPIO          GPIO_NUM_20
-#define RESET_BUTTON_GPIO   GPIO_NUM_35
-#define RESET_BUTTON_HOLD_TIME_MS 3000
+#define MQTT_URI                	"mqtt://mqtt.toolhub.app:1883"
+#define MQTT_TOPIC_CMD          	"home/socket/cmd"
+#define MQTT_TOPIC_STATUS       	"home/socket/status"
+#define MQTT_TOPIC_PROVISIONING 	"home/socket/provisioning"
+#define RELAY_GPIO              	GPIO_NUM_20
+#define RESET_BUTTON_GPIO   		GPIO_NUM_35
+#define RESET_BUTTON_HOLD_TIME_MS 	3000
 
 #define NVS_RELAY_NAMESPACE "relay"
 #define NVS_RELAY_STATE_KEY "state"
@@ -160,6 +161,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 	case MQTT_EVENT_CONNECTED:
 		ESP_LOGI(TAG, "MQTT connected, subscribing");
 		esp_mqtt_client_subscribe(event->client, MQTT_TOPIC_CMD, 1);
+		
+		/* Publish provisioning success message */
+		esp_mqtt_client_publish(event->client, MQTT_TOPIC_PROVISIONING, "SUCCESS", 0, 1, 1);
+		ESP_LOGI(TAG, "Published provisioning SUCCESS status");
+		
+		/* Publish current relay state immediately upon connection */
+		publish_status(relay_state_load());
+		ESP_LOGI(TAG, "Published current relay state to broker");
 		break;
 	case MQTT_EVENT_DATA: {
 		/* Payload is not null-terminated; compare length explicitly */

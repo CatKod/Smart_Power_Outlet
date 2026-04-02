@@ -20,14 +20,20 @@ class MqttService {
     required String broker,
     required int port,
     String? clientId,
+    String? username,
+    String? password,
   })  : _broker = broker,
         _port = port,
         _clientId = clientId ?? 'flutter_${const Uuid().v4().substring(0, 8)}',
+        _username = username,
+        _password = password,
         _logger = Logger(printer: PrettyPrinter());
 
   final String _broker;
   final int _port;
   final String _clientId;
+  final String? _username;
+  final String? _password;
   final Logger _logger;
 
   MqttServerClient? _client;
@@ -66,11 +72,16 @@ class MqttService {
       _client!.pongCallback = _onPong;
 
       // Connection message
-      final connMessage = MqttConnectMessage()
+      var connMessage = MqttConnectMessage()
           .withClientIdentifier(_clientId)
           .withWillQos(MqttQos.atLeastOnce)
           .startClean()
           .withWillRetain();
+
+      // Add username/password authentication if provided
+      if (_username != null && _password != null) {
+        connMessage = connMessage.authenticateAs(_username, _password);
+      }
       
       _client!.connectionMessage = connMessage;
 
@@ -160,6 +171,82 @@ class MqttService {
       MqttQos.atLeastOnce,
       builder.payload!,
     );
+  }
+
+  /// Wait for device WiFi provisioning confirmation from ESP32.
+  ///
+  /// - Subscribe topic: 'home/socket/provisioning' (QoS 1)
+  /// - Wait up to 30s for payload 'SUCCESS'
+  /// - On SUCCESS: clear retained message by publishing empty payload with retain = true
+  /// - Always unsubscribe and clean up before returning
+  Future<bool> waitForDeviceProvisioning() async {
+    if (_client == null ||
+        _client!.connectionStatus?.state != MqttConnectionState.connected) {
+      _logger.w('Cannot wait for provisioning: MQTT client not connected');
+      return false;
+    }
+
+    const String provisioningTopic = 'home/socket/provisioning';
+    final completer = Completer<bool>();
+
+    _logger.i('Subscribing to provisioning topic: $provisioningTopic');
+    _client!.subscribe(provisioningTopic, MqttQos.atLeastOnce);
+
+    late StreamSubscription<List<MqttReceivedMessage<MqttMessage>>> subscription;
+
+    subscription = _client!.updates!.listen((messages) {
+      if (messages.isEmpty) return;
+
+      final msg = messages.first;
+      if (msg.topic != provisioningTopic) return;
+
+      final MqttPublishMessage payloadMessage = msg.payload as MqttPublishMessage;
+      final String payload = MqttPublishPayload.bytesToStringAsString(
+        payloadMessage.payload.message,
+      ).trim();
+
+      _logger.d('Provisioning message received on $provisioningTopic: $payload');
+
+      if (payload == 'SUCCESS') {
+        // Clear retained message by publishing empty payload with retain = true
+        final builder = MqttClientPayloadBuilder();
+        builder.addString('');
+
+        _logger.i('Clearing retained provisioning message on $provisioningTopic');
+        _client!.publishMessage(
+          provisioningTopic,
+          MqttQos.atLeastOnce,
+          builder.payload!,
+          retain: true,
+        );
+
+        if (!completer.isCompleted) {
+          completer.complete(true);
+        }
+      } else if (payload == 'FAIL') {
+        // Optional: treat explicit failure message as immediate false
+        _logger.w('Provisioning failed with payload: $payload');
+        if (!completer.isCompleted) {
+          completer.complete(false);
+        }
+      }
+    });
+
+    try {
+      final result = await completer.future
+          .timeout(const Duration(seconds: 30));
+      return result;
+    } on TimeoutException {
+      _logger.w('Provisioning confirmation timed out after 30 seconds');
+      if (!completer.isCompleted) {
+        completer.complete(false);
+      }
+      return false;
+    } finally {
+      _logger.i('Unsubscribing from provisioning topic: $provisioningTopic');
+      await subscription.cancel();
+      _client?.unsubscribe(provisioningTopic);
+    }
   }
 
   /// Disconnect from MQTT broker

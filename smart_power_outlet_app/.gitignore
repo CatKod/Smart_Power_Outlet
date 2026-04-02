@@ -33,6 +33,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Personal secret configuration (not committed)
+/.scretc_config/
+lib/mqtt_sever_config.dart
+
 # Symbolication related
 app.*.symbols
 
