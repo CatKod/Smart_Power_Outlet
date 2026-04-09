@@ -35,56 +35,10 @@ class ProvisioningService {
     required String ssid,
     required String password,
   }) async {
-    try {
-      _logger.i('Starting WiFi provisioning for SSID: $ssid');
-
-      // Prepare URL-encoded payload
-      final data = {
-        'ssid': ssid,
-        'pass': password,
-      };
-
-      // Send POST request to ESP32
-      final response = await _dio.post(
-        '/',
-        data: data,
-        options: Options(
-          contentType: Headers.formUrlEncodedContentType,
-          validateStatus: (status) => status != null && status < 500,
-        ),
-      );
-
-      _logger.i('Provisioning response: ${response.statusCode}');
-      _logger.d('Response data: ${response.data}');
-
-      // Consider 200-299 as success
-      if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
-        _logger.i('WiFi provisioning successful');
-        return true;
-      } else {
-        _logger.w('Provisioning failed with status: ${response.statusCode}');
-        return false;
-      }
-    } on DioException catch (e) {
-      _logger.e('DioException during provisioning: ${e.type} - ${e.message}');
-      
-      if (e.type == DioExceptionType.connectionTimeout || 
-          e.type == DioExceptionType.sendTimeout ||
-          e.type == DioExceptionType.receiveTimeout) {
-        _logger.e('Timeout: Make sure your phone is connected to ESP32 AP network');
-        throw TimeoutException('Connection to ESP32 timed out. Please ensure you are connected to the device\'s WiFi network.');
-      }
-      
-      if (e.type == DioExceptionType.connectionError) {
-        _logger.e('Connection error: Cannot reach ESP32 at 192.168.4.1');
-        throw Exception('Cannot connect to ESP32. Please verify you are connected to the device\'s WiFi network.');
-      }
-      
-      rethrow;
-    } catch (e) {
-      _logger.e('Unexpected error during provisioning: $e');
-      rethrow;
-    }
+    // Bỏ qua phần cấu hình WiFi qua Access Point của ESP32 theo yêu cầu
+    _logger.i('Bỏ qua thao tác cấu hình WiFi AP (giả lập thành công)...');
+    await Future.delayed(const Duration(milliseconds: 500)); 
+    return true;
   }
 
   /// Test connection to ESP32 access point
