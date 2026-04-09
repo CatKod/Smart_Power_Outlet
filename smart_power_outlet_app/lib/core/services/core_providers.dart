@@ -3,16 +3,27 @@ import '../services/mqtt_service.dart';
 import '../services/provisioning_service.dart';
 import '../services/connection_status.dart';
 import '../services/device_state.dart';
+import 'secret.dart';
 
 /// Provider for MQTT Service (Singleton)
 final mqttServiceProvider = Provider<MqttService>((ref) {
   final service = MqttService(
     broker: 'mqtt.toolhub.app',
     port: 1883,
+    username: mqttUsername,
+    password: mqttPassword,
   );
   
-  // Auto-connect when app starts
-  service.connect();
+  // Auto-connect when app starts, and immediately wait for provisioning
+  service.connect().then((_) {
+    service.waitForDeviceProvisioning().then((success) {
+      if (success) {
+        print("🎉 ĐÃ BẮT ĐƯỢC STARTED TỪ THIẾT BỊ!");
+      } else {
+        print("❌ KHÔNG BẮT ĐƯỢC STARTED (BỊ TIMEOUT HOẶC LỖI)");
+      }
+    });
+  });
   
   // Dispose when provider is destroyed
   ref.onDispose(() {

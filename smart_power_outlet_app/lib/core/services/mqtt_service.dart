@@ -20,14 +20,20 @@ class MqttService {
     required String broker,
     required int port,
     String? clientId,
+    String? username,
+    String? password,
   })  : _broker = broker,
         _port = port,
         _clientId = clientId ?? 'flutter_${const Uuid().v4().substring(0, 8)}',
+        _username = username,
+        _password = password,
         _logger = Logger(printer: PrettyPrinter());
 
   final String _broker;
   final int _port;
   final String _clientId;
+  final String? _username;
+  final String? _password;
   final Logger _logger;
 
   MqttServerClient? _client;
@@ -66,16 +72,20 @@ class MqttService {
       _client!.pongCallback = _onPong;
 
       // Connection message
-      final connMessage = MqttConnectMessage()
+      var connMessage = MqttConnectMessage()
           .withClientIdentifier(_clientId)
           .withWillQos(MqttQos.atLeastOnce)
           .startClean()
           .withWillRetain();
+          
+      if (_username != null && _password != null) {
+        connMessage = connMessage.authenticateAs(_username!, _password!);
+      }
       
       _client!.connectionMessage = connMessage;
 
       // Attempt connection
-      await _client!.connect();
+      await _client!.connect(_username, _password);
       
       if (_client!.connectionStatus!.state == MqttConnectionState.connected) {
         _logger.i('MQTT client connected successfully');
@@ -109,19 +119,27 @@ class MqttService {
     const String statusTopic = 'home/socket/status';
     _logger.i('Subscribing to topic: $statusTopic');
     _client!.subscribe(statusTopic, MqttQos.atLeastOnce);
+    
+    // Inject a default state so the UI button becomes clickable immediately
+    if (_currentDeviceState == null) {
+      _logger.i('Injecting default OFF state to unblock UI');
+      _handleStatusUpdate('OFF');
+    }
   }
 
   /// Setup listener for incoming messages
   void _setupMessageListener() {
     _client!.updates!.listen((List<MqttReceivedMessage<MqttMessage>> messages) {
-      final MqttPublishMessage message = messages[0].payload as MqttPublishMessage;
-      final String payload = MqttPublishPayload.bytesToStringAsString(message.payload.message);
-      final String topic = messages[0].topic;
+      for (var msg in messages) {
+        final MqttPublishMessage message = msg.payload as MqttPublishMessage;
+        final String payload = MqttPublishPayload.bytesToStringAsString(message.payload.message);
+        final String topic = msg.topic;
 
-      _logger.d('Received message: $payload from topic: $topic');
+        _logger.d('Received message: $payload from topic: $topic');
 
-      if (topic == 'home/socket/status') {
-        _handleStatusUpdate(payload);
+        if (topic == 'home/socket/status') {
+          _handleStatusUpdate(payload);
+        }
       }
     });
   }
@@ -160,6 +178,77 @@ class MqttService {
       MqttQos.atLeastOnce,
       builder.payload!,
     );
+  }
+
+  /// Lắng nghe và xử lý chờ thiết bị provisioning (cấu hình mạng) thành công
+  Future<bool> waitForDeviceProvisioning() async {
+    if (_client == null || _client!.connectionStatus!.state != MqttConnectionState.connected) {
+      _logger.w('Cannot wait for provisioning: Client not connected');
+      return false;
+    }
+
+    const String provisionTopic = 'home/socket/provisioning';
+    
+    // 1. Subscribe: Đăng ký lắng nghe topic với QoS 1 (atLeastOnce)
+    _logger.i('Subscribing to $provisionTopic for provisioning...');
+    _client!.subscribe(provisionTopic, MqttQos.atLeastOnce);
+
+    final Completer<bool> completer = Completer<bool>();
+    StreamSubscription? subscription;
+
+    try {
+      // 2. Lắng nghe & Lọc: Dùng Stream để quét các tin nhắn đến
+      subscription = _client!.updates!.listen((List<MqttReceivedMessage<MqttMessage>> messages) {
+        for (var receivedMsg in messages) {
+          if (receivedMsg.topic == provisionTopic) {
+            final MqttPublishMessage pubMsg = receivedMsg.payload as MqttPublishMessage;
+            final String payload = MqttPublishPayload.bytesToStringAsString(pubMsg.payload.message);
+            
+            _logger.d('Provisioning topic payload received: $payload');
+            
+            // Nếu bắt được payload là chữ 'Started' (trim để phòng hờ có dấu space/newline/null)
+            if (payload.trim() == 'Started') {
+              if (!completer.isCompleted) {
+                completer.complete(true); // Kích hoạt tương lai kết thúc thành công
+              }
+            }
+          }
+        }
+      });
+
+      // 4. Timeout: Cài đặt thời gian chờ tối đa 30 giây
+      final bool result = await completer.future.timeout(const Duration(seconds: 30));
+
+      // 3. Dọn rác (Clear Retained Message): Gửi chuỗi rỗng với retain: true ngay khi thành công
+      if (result) {
+        _logger.i('Provisioning Started received. Clearing retained message...');
+        final MqttClientPayloadBuilder builder = MqttClientPayloadBuilder();
+        builder.addString(''); // Tạo chuỗi rỗng
+        
+        _client!.publishMessage(
+          provisionTopic,
+          MqttQos.atLeastOnce,
+          builder.payload!,
+          retain: true, // Quan trọng: set retain = true để MQTT Broker xóa hộp thư lưu giữ
+        );
+      }
+      
+      return result;
+      
+    } on TimeoutException {
+      // Xử lý ngoại lệ quá thời gian chờ (sau 30 giây không nhận được gì)
+      _logger.w('Provisioning timeout after 30 seconds');
+      return false;
+    } catch (e) {
+      // Xử lý các lỗi ngoại lệ khác
+      _logger.e('Error during provisioning waiting: $e');
+      return false;
+    } finally {
+      // 5. Dọn dẹp: Dù thành công hay timeout, luôn luôn unsubscribe và hủy lắng nghe stream
+      _logger.i('Unsubscribing from $provisionTopic and cleaning up stream');
+      _client!.unsubscribe(provisionTopic);
+      await subscription?.cancel();
+    }
   }
 
   /// Disconnect from MQTT broker

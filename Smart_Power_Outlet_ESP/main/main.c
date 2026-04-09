@@ -160,6 +160,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 	case MQTT_EVENT_CONNECTED:
 		ESP_LOGI(TAG, "MQTT connected, subscribing");
 		esp_mqtt_client_subscribe(event->client, MQTT_TOPIC_CMD, 1);
+		esp_mqtt_client_publish(event->client, "home/socket/provisioning", "Started", 0, 1, 1);
 		break;
 	case MQTT_EVENT_DATA: {
 		/* Payload is not null-terminated; compare length explicitly */
