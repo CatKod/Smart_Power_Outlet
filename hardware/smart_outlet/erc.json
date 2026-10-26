@@ -1,0 +1,97 @@
+{
+    "$schema": "https://schemas.kicad.org/erc.v1.json",
+    "coordinate_units": "mm",
+    "date": "2026-09-07T14:22:37",
+    "ignored_checks": [
+        {
+            "description": "Global label only appears once in the schematic",
+            "key": "single_global_label"
+        },
+        {
+            "description": "Four connection points are joined together",
+            "key": "four_way_junction"
+        },
+        {
+            "description": "SPICE model issue",
+            "key": "simulation_model_issue"
+        },
+        {
+            "description": "Assigned footprint doesn't match footprint filters",
+            "key": "footprint_filter"
+        }
+    ],
+    "included_severities": [
+        "error",
+        "warning"
+    ],
+    "kicad_version": "10.0.6",
+    "sheets": [
+        {
+            "path": "/",
+            "uuid_path": "/3b3dd3e3-45a0-4340-8458-abf18d9dd194",
+            "violations": [
+                {
+                    "description": "Ký hiệu 'AO3400A' không khớp với bản sao trong thư viện 'Transistor_FET'",
+                    "items": [
+                        {
+                            "description": "Ký hiệu Q1 [AO3400A]",
+                            "pos": {
+                                "x": 0.7366,
+                                "y": 1.3208
+                            },
+                            "uuid": "299b54b2-6f23-4bfc-a341-454780a50c82"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_mismatch"
+                },
+                {
+                    "description": "Ký hiệu 'AMS1117-3.3' không khớp với bản sao trong thư viện 'Regulator_Linear'",
+                    "items": [
+                        {
+                            "description": "Ký hiệu U2 [AMS1117-3.3]",
+                            "pos": {
+                                "x": 1.143,
+                                "y": 0.762
+                            },
+                            "uuid": "de53d6bb-5ec7-40d5-b63c-975c5e5d2bb0"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_mismatch"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Nhãn 'UART_RX'",
+                            "pos": {
+                                "x": 1.6764,
+                                "y": 0.6731
+                            },
+                            "uuid": "24343fd9-042b-4aa0-aeea-f7320b66eb25"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                },
+                {
+                    "description": "Label connected to only one pin",
+                    "items": [
+                        {
+                            "description": "Nhãn 'UART_TX'",
+                            "pos": {
+                                "x": 1.7526,
+                                "y": 0.6731
+                            },
+                            "uuid": "04133fa0-7d7b-4663-b21e-a669d50a4357"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "isolated_pin_label"
+                }
+            ]
+        }
+    ],
+    "source": "smart_outlet.kicad_sch"
+}
