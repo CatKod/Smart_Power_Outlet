@@ -91,6 +91,23 @@ def pzem_worker(stop_event: threading.Event) -> None:
             with _serial_lock:
                 pzem = _get_session()
 
+            # Tự dò địa chỉ slave nếu địa chỉ cấu hình không phản hồi
+            with _serial_lock:
+                if not pzem.probe():
+                    LOG.info(
+                        "Địa chỉ 0x%02X không phản hồi, đang tự dò...",
+                        pzem.address,
+                    )
+                    found = pzem.auto_detect_address()
+                    if found is not None:
+                        LOG.info("Tìm thấy PZEM tại địa chỉ slave 0x%02X", found)
+                        _config["address"] = found
+                    else:
+                        LOG.warning(
+                            "Không tìm thấy slave nào phản hồi. "
+                            "Kiểm tra nguồn lưới AC 220V cho PZEM và dây TX/RX."
+                        )
+
             LOG.info(
                 "Đã mở cổng %s (addr 0x%02X, %d baud)",
                 _config["port"], _config["address"], _config["baud"],
@@ -294,10 +311,13 @@ class PzemHandler(BaseHTTPRequestHandler):
 
         def action(session):
             info = session.read_settings()
-            return (
+            text = (
                 f"địa chỉ slave=0x{info['slave_address']:02X}, "
                 f"ngưỡng cảnh báo={info['power_alarm_threshold']} W"
             )
+            if "baudrate" in info:
+                text += f", baud={info['baudrate']}"
+            return text
 
         return _with_session(action)
 
@@ -312,8 +332,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument(
         "--address",
         type=lambda s: int(s, 0),
-        default=0xF8,
-        help="Địa chỉ Modbus slave (mặc định 0xF8 - địa chỉ chung)",
+        default=0x01,
+        help="Địa chỉ Modbus slave (mặc định 0x01, tự dò nếu không phản hồi)",
     )
     p.add_argument("--web-port", type=int, default=8000, help="Cổng web server (mặc định 8000)")
     p.add_argument("--host", default="127.0.0.1", help="Địa chỉ lắng nghe (mặc định 127.0.0.1)")
