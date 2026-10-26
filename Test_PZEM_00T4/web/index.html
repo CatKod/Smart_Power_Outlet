@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PZEM-004T - Đo năng lượng</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --card-2: #273449;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --ok: #34d399;
+    --bad: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px 16px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px; margin-bottom: 20px;
+  }
+  h1 { font-size: 22px; margin: 0; font-weight: 600; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--card); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 999px; font-size: 13px;
+  }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--muted);
+    box-shadow: 0 0 0 3px rgba(148,163,184,.15);
+  }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(52,211,153,.18); }
+  .dot.err { background: var(--bad); box-shadow: 0 0 0 3px rgba(248,113,113,.18); }
+
+  .banner {
+    display: none; margin-bottom: 16px; padding: 12px 16px;
+    border-radius: 10px; font-size: 14px;
+    background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.35);
+    color: #fecaca;
+  }
+  .banner.show { display: block; }
+  .banner.sim {
+    background: rgba(251,191,36,.14); border: 1px solid rgba(251,191,36,.45);
+    color: #fde68a;
+  }
+  .simbadge {
+    display: none; margin-bottom: 16px; padding: 10px 16px;
+    border-radius: 10px; font-size: 13px; font-weight: 600;
+    background: rgba(251,191,36,.16); border: 1px solid rgba(251,191,36,.5);
+    color: #fde68a; text-align: center;
+  }
+  .simbadge.show { display: block; }
+
+  .tools {
+    margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap;
+    align-items: center;
+  }
+  button.tool {
+    background: var(--card-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; font-size: 13px; cursor: pointer;
+    font-family: inherit;
+  }
+  button.tool:hover { background: #31405a; border-color: var(--accent); }
+  button.tool:disabled { opacity: .5; cursor: not-allowed; }
+  .toolout { color: var(--muted); font-size: 12px; }
+
+  .grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px;
+  }
+  .label {
+    color: var(--muted); font-size: 12px; text-transform: uppercase;
+    letter-spacing: .6px; margin-bottom: 10px;
+  }
+  .value {
+    font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .unit { font-size: 15px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+  .card.accent .value { color: var(--accent); }
+
+  footer {
+    margin-top: 22px; color: var(--muted); font-size: 12px;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  }
+  code { background: var(--card-2); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>PZEM-004T <span>|</span> Đo năng lượng</h1>
+      <div class="sub" id="meta">Đang kết nối...</div>
+    </div>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="statusText">Đang kết nối</span>
+    </div>
+  </header>
+
+  <div class="simbadge" id="simbadge">
+    ⚠ CHẾ ĐỘ MÔ PHỎNG — số liệu dưới đây là dữ liệu giả lập, KHÔNG phải giá trị đo thật
+  </div>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Điện áp</div>
+      <div class="value"><span id="voltage">--</span><span class="unit">V</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Dòng điện</div>
+      <div class="value"><span id="current">--</span><span class="unit">A</span></div>
+    </div>
+    <div class="card accent">
+      <div class="label">Công suất</div>
+      <div class="value"><span id="power">--</span><span class="unit">W</span></div>
+    </div>
+    <div class="card accent">
+      <div class="label">Năng lượng tích luỹ</div>
+      <div class="value"><span id="energy">--</span><span class="unit">Wh</span></div>
+      <div class="sub" id="energyKwh">-- kWh</div>
+    </div>
+    <div class="card">
+      <div class="label">Tần số</div>
+      <div class="value"><span id="frequency">--</span><span class="unit">Hz</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Hệ số công suất</div>
+      <div class="value"><span id="power_factor">--</span><span class="unit">PF</span></div>
+    </div>
+  </div>
+
+  <footer>
+    <span>Cập nhật tự động mỗi 1 giây &middot; Nguồn: <code id="srcPort">--</code></span>
+    <span id="updated">Chưa có dữ liệu</span>
+  </footer>
+
+  <div class="tools">
+    <button class="tool" id="btnScan">Dò địa chỉ slave</button>
+    <button class="tool" id="btnSettings">Đọc tham số slave</button>
+    <span class="toolout" id="toolOut"></span>
+  </div>
+</div>
+
+<script>
+  const FIELDS = ["voltage", "current", "power", "energy", "frequency", "power_factor"];
+  const DECIMALS = { voltage: 1, current: 3, power: 1, energy: 0, frequency: 1, power_factor: 2 };
+  function fmt(v, key) {
+    if (v === null || v === undefined || Number.isNaN(v)) return "--";
+    const d = DECIMALS[key] ?? 2;
+    return Number(v).toFixed(d);
+  }
+
+  async function tick() {
+    try {
+      const res = await fetch("/api/metrics", { cache: "no-store" });
+      const data = await res.json();
+      const m = data.metrics;
+
+      FIELDS.forEach((f) => {
+        const el = document.getElementById(f);
+        if (el) el.textContent = m ? fmt(m[f], f) : "--";
+      });
+
+      const energyKwh = document.getElementById("energyKwh");
+      if (energyKwh) {
+        energyKwh.textContent = m && m.energy_kwh != null
+          ? fmt(m.energy_kwh, "energy_kwh") + " kWh"
+          : "-- kWh";
+      }
+
+      const dot = document.getElementById("dot");
+      const statusText = document.getElementById("statusText");
+      const banner = document.getElementById("banner");
+      const simbadge = document.getElementById("simbadge");
+
+      if (simbadge) simbadge.className = data.simulate ? "simbadge show" : "simbadge";
+
+      if (data.connected && m) {
+        dot.className = "dot on";
+        statusText.textContent = data.simulate ? "Đang mô phỏng" : "Đang hoạt động";
+        banner.className = "banner";
+      } else {
+        dot.className = "dot err";
+        statusText.textContent = "Mất kết nối";
+        banner.textContent = data.error || "Chưa nhận được dữ liệu từ PZEM-004T.";
+        banner.className = "banner show";
+      }
+
+      const src = document.getElementById("srcPort");
+      if (src) {
+        const proto = data.simulate ? "MÔ PHỎNG" : "MODBUS-RTU";
+        const addr = data.address != null
+          ? " · slave 0x" + Number(data.address).toString(16).toUpperCase().padStart(2, "0")
+          : "";
+        src.textContent = `${data.port} @ ${data.baud} baud${addr} · ${proto}`;
+      }
+
+      const meta = document.getElementById("meta");
+      if (meta) meta.textContent = `${data.samples || 0} mẫu đo đã lấy`;
+
+      const updated = document.getElementById("updated");
+      if (updated) {
+        updated.textContent = data.last_update
+          ? "Cập nhật lúc " + new Date(data.last_update * 1000).toLocaleTimeString("vi-VN")
+          : "Chưa có dữ liệu";
+      }
+    } catch (err) {
+      document.getElementById("dot").className = "dot err";
+      document.getElementById("statusText").textContent = "Lỗi kết nối web";
+    }
+  }
+
+  async function callTool(url, label, btn) {
+    const out = document.getElementById("toolOut");
+    btn.disabled = true;
+    out.textContent = label + "...";
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const data = await res.json();
+      out.textContent = label + ": " + (data.result || data.error || JSON.stringify(data));
+    } catch (err) {
+      out.textContent = label + ": lỗi " + err;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById("btnScan").addEventListener("click", (e) =>
+    callTool("/api/scan", "Đang dò", e.currentTarget));
+  document.getElementById("btnSettings").addEventListener("click", (e) =>
+    callTool("/api/settings", "Đang đọc", e.currentTarget));
+
+  tick();
+  setInterval(tick, 1000);
+</script>
+</body>
+</html>
