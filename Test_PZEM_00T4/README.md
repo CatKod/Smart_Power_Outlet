@@ -14,7 +14,9 @@ Test_PZEM_00T4/
 │   └── index.html     # Giao diện dashboard
 ├── tools/
 │   ├── test_decode.py        # Kiểm thử giải mã theo frame ví dụ trong tài liệu
+│   ├── verify_frame.py       # Kiểm chứng CRC + giải mã frame thật từ thiết bị
 │   ├── scan_pzem.py          # Dò địa chỉ slave / function code
+│   ├── dump_settings.py      # Xem raw thanh ghi tham số (func 0x03)
 │   ├── probe_exhaustive.py   # Dò rộng baud x parity x địa chỉ
 │   └── check_crc.py          # Đối chiếu thuật toán CRC với tài liệu
 └── README.md
@@ -46,7 +48,7 @@ Các tham số khác:
 |---|---|---|
 | `--port` | `COM10` | Cổng COM của TTL-USB |
 | `--baud` | `9600` | Tốc độ baud |
-| `--address` | `0xF8` | Địa chỉ Modbus slave |
+| `--address` | `0x01` | Địa chỉ Modbus slave (tự dò nếu không phản hồi) |
 | `--web-port` | `8000` | Cổng web server |
 | `--interval` | `1.0` | Chu kỳ lấy mẫu (giây) |
 | `--simulate` | — | Chế độ mô phỏng, **không** đọc phần cứng thật |
@@ -130,7 +132,27 @@ frame ví dụ trong tài liệu khớp chính xác (kiểm chứng bởi `tools
 
 - Dải hợp lệ: `0x01` … `0xF7`
 - `0x00`: địa chỉ quảng bá (slave **không** trả lời)
-- `0xF8`: địa chỉ chung, dùng khi chỉ có **một** slave — **đây là mặc định**
+- `0xF8`: địa chỉ chung — module **vẫn trả lời** kể cả khi địa chỉ riêng là
+  `0x01` (đã kiểm chứng trên thiết bị thật: quét ra `0xF8, 0x01`)
+
+> **Thiết bị đo thật trong dự án dùng địa chỉ `0x01`.** Đây là lý do ban đầu
+> dùng `0xF8` làm mặc định thì không nhận được phản hồi. Driver hiện dùng
+> `0x01` làm mặc định và **tự dò** địa chỉ nếu địa chỉ cấu hình không phản hồi.
+
+### Bảng thanh ghi tham số (function code `0x03`)
+
+Bố cục **thực tế** (đã kiểm chứng bằng `tools/dump_settings.py`):
+
+| Địa chỉ | Ý nghĩa | Giá trị trên thiết bị mẫu |
+|---|---|---|
+| `0x0000` | (không tài liệu) | `0x0001` |
+| `0x0001` | Ngưỡng cảnh báo công suất (W) | `0x59D8` = 23000 W |
+| `0x0002` | Địa chỉ Modbus-RTU của slave | `0x0001` |
+| `0x0003` | Tốc độ baud | `0x2580` = 9600 |
+
+> Lưu ý: tài liệu liệt kê `0x0001`/`0x0002` cho ngưỡng cảnh báo và địa chỉ
+> slave, nhưng **thực tế phải đọc bắt đầu từ `0x0001`** — đọc từ `0x0000` sẽ
+> lệch vị trí và ra giá trị sai.
 
 ### Khi chưa cắm tải
 
@@ -150,16 +172,16 @@ hiển thị đúng, tránh ra các con số rác như `655.3 A`.
   "last_update": 1793028946.25,
   "port": "COM10",
   "baud": 9600,
-  "address": 248,
+  "address": 1,
   "simulate": false,
   "metrics": {
-    "voltage": 220.0,
-    "current": 1.0,
-    "power": 220.0,
-    "energy": 0.0,
-    "energy_kwh": 0.0,
+    "voltage": 234.1,
+    "current": 0.073,
+    "power": 9.3,
+    "energy": 2.0,
+    "energy_kwh": 0.002,
     "frequency": 50.0,
-    "power_factor": 1.0,
+    "power_factor": 0.54,
     "alarm": 0,
     "timestamp": 1793028946.25
   }
@@ -168,11 +190,37 @@ hiển thị đúng, tránh ra các con số rác như `655.3 A`.
 
 Khi mất kết nối, `connected` là `false` và `error` chứa thông báo lỗi.
 
-## 7. Kiểm thử
+## 7. Kết quả đo thực tế
+
+Đã kiểm chứng trên PZEM-004T V3.0 thật (COM10, đèn bàn LED ~10W):
+
+```
+Điện áp       : 233.8 V
+Dòng điện     : 0.075 A
+Công suất     : 9.7 W
+Điện năng     : 2.0 Wh (0.002 kWh)
+Tần số        : 50.1 Hz
+Hệ số CS      : 0.55
+Cảnh báo      : 0x0000 (bình thường)
+```
+
+Đối chiếu `P = V × I × PF` = 233.8 × 0.075 × 0.55 = **9.64 W** khớp với giá trị
+đo được **9.7 W** → giải mã chính xác.
+
+Frame thô nhận được từ thiết bị:
+
+```
+TX: 01 04 00 00 00 0A 70 0D
+RX: 01 04 14 09 22 00 4B 00 00 00 61 00 00 00 02 00 00 01 F5 00 37 00 00 5B CB
+```
+
+## 8. Kiểm thử
 
 ```bash
 python tools/test_decode.py        # kiểm thử giải mã (không cần phần cứng)
+python tools/verify_frame.py       # kiểm chứng CRC + giải mã frame thật
 python tools/scan_pzem.py COM10    # dò địa chỉ slave / function code
+python tools/dump_settings.py COM10 0x01   # xem raw thanh ghi tham số
 python tools/probe_exhaustive.py COM10
 ```
 
@@ -185,7 +233,7 @@ python tools/probe_exhaustive.py COM10
 | Giá trị thực tế | 220.5 V, 1.234 A, 271.4 W, 1500 Wh, 50.0 Hz, PF 0.95 |
 | Chưa có tải (sentinel) | tất cả bằng 0 |
 
-## 8. Chế độ mô phỏng
+## 9. Chế độ mô phỏng
 
 Khi chưa có phần cứng, dùng `--simulate` để kiểm thử giao diện:
 

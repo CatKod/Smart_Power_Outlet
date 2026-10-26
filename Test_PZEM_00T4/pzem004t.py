@@ -35,7 +35,11 @@ from typing import Optional
 import serial
 
 # --- Hằng số theo tài liệu ---
-PZEM_DEFAULT_ADDRESS = 0xF8   # Địa chỉ chung, dùng khi chỉ có 1 slave
+# Địa chỉ mặc định của PZEM-004T V3.0 là 0xF8 (địa chỉ chung, dùng khi chỉ có
+# 1 slave). Tuy nhiên nhiều thiết bị bán sẵn để ở 0x01 - đo được trên thiết bị
+# thật là 0x01, nên dùng 0x01 làm mặc định và có cơ chế tự dò.
+PZEM_DEFAULT_ADDRESS = 0x01
+PZEM_GENERAL_ADDRESS = 0xF8
 PZEM_DEFAULT_BAUD = 9600
 PZEM_MIN_ADDRESS = 0x01
 PZEM_MAX_ADDRESS = 0xF7
@@ -183,19 +187,86 @@ class Pzem004T:
             raise PzemError("Cổng serial chưa mở")
         return self._read_registers(CMD_READ_INPUT)
 
+    def probe(self) -> bool:
+        """Kiểm tra slave có phản hồi ở địa chỉ hiện tại không (không ném lỗi)."""
+        if not self.is_open:
+            return False
+        request = build_read_frame(self.address, CMD_READ_INPUT, REG_MEASURE_BASE, REG_COUNT)
+        self._ser.reset_input_buffer()
+        self._ser.write(request)
+        self._ser.flush()
+        time.sleep(0.15)
+        resp = self._ser.read(64)
+        return bool(resp) and len(resp) >= 3 and resp[1] == CMD_READ_INPUT
+
+    def auto_detect_address(self) -> Optional[int]:
+        """Tự dò địa chỉ slave nếu địa chỉ cấu hình không phản hồi.
+
+        Trả về địa chỉ tìm thấy, hoặc None nếu không có slave nào phản hồi.
+        """
+        if not self.is_open:
+            raise PzemError("Cổng serial chưa mở")
+        if self.probe():
+            return self.address
+
+        # Thử địa chỉ chung 0xF8 trước, rồi quét các địa chỉ phổ biến
+        candidates = [PZEM_GENERAL_ADDRESS] + list(range(0x01, 0x11))
+        for address in candidates:
+            if address == self.address:
+                continue
+            self.address = address
+            if self.probe():
+                return address
+
+        # Quét toàn bộ dải hợp lệ
+        for address in range(PZEM_MIN_ADDRESS, PZEM_MAX_ADDRESS + 1):
+            if address in candidates:
+                continue
+            self.address = address
+            if self.probe():
+                return address
+
+        self.address = PZEM_DEFAULT_ADDRESS
+        return None
+
     def read_settings(self) -> dict:
-        """Đọc tham số slave (ngưỡng cảnh báo, địa chỉ) bằng function 0x03."""
+        """Đọc tham số slave bằng function 0x03.
+
+        Bố cục thanh ghi holding thực tế (đã kiểm chứng trên thiết bị):
+            0x0000  (không tài liệu)
+            0x0001  Ngưỡng cảnh báo công suất (W)
+            0x0002  Địa chỉ Modbus-RTU của slave
+            0x0003  Tốc độ baud
+        """
         if not self.is_open:
             raise PzemError("Cổng serial chưa mở")
         response = self._transact(
-            build_read_frame(self.address, CMD_READ_HOLDING, 0x0000, 0x0003)
+            build_read_frame(self.address, CMD_READ_HOLDING, REG_ALARM_THRESHOLD, 0x0003)
         )
         if response is None:
             raise PzemError("Không nhận được phản hồi khi đọc tham số slave")
-        data = response[3:9]
-        threshold = (data[0] << 8) | data[1]
-        address = (data[2] << 8) | data[3]
-        return {"power_alarm_threshold": threshold, "slave_address": address}
+
+        # Phản hồi lỗi
+        if len(response) >= 3 and response[1] == (CMD_READ_HOLDING | 0x80):
+            raise PzemError(f"PZEM báo lỗi 0x{response[2]:02X} khi đọc tham số")
+
+        body = response[:-2]
+        rx_crc = response[-2] | (response[-1] << 8)
+        if crc16_modbus(body) != rx_crc:
+            raise PzemError("CRC phản hồi tham số không hợp lệ")
+
+        data = response[3:3 + response[2]]
+
+        def u16(i: int) -> int:
+            return (data[i] << 8) | data[i + 1]
+
+        settings = {
+            "power_alarm_threshold": u16(0),   # 0x0001
+            "slave_address": u16(2),           # 0x0002
+        }
+        if len(data) >= 6:
+            settings["baudrate"] = u16(4)      # 0x0003
+        return settings
 
     def set_alarm_threshold(self, watts: int) -> None:
         """Đặt ngưỡng cảnh báo công suất (tối đa 25000 W)."""
@@ -358,10 +429,12 @@ class Pzem004T:
             raise PzemError("Cổng serial chưa mở")
 
         if addresses is None:
-            common = [PZEM_DEFAULT_ADDRESS] + list(range(0x01, 0x11))
+            # Thử trước địa chỉ chung 0xF8 và các địa chỉ thường gặp 0x01-0x10,
+            # rồi mới quét toàn bộ dải 0x01-0xF7. Loại trùng bằng dict.
+            common = [PZEM_GENERAL_ADDRESS] + list(range(0x01, 0x11))
             full = [a for a in range(PZEM_MIN_ADDRESS, PZEM_MAX_ADDRESS + 1)
                     if a not in common]
-            addresses = common + full
+            addresses = list(dict.fromkeys(common + full))
 
         found = []
         # Giảm timeout tạm thời khi quét để không chờ lâu cho mỗi địa chỉ
