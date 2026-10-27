@@ -157,7 +157,40 @@ class Pzem004T:
                 write_timeout=self.timeout,
             )
         except Exception as exc:  # noqa: BLE001
-            raise PzemError(f"Không mở được cổng {self.port}: {exc}") from exc
+            raise PzemError(self._explain_open_error(exc)) from exc
+
+    def _explain_open_error(self, exc: Exception) -> str:
+        """Diễn giải lỗi mở cổng serial để người dùng biết phải làm gì.
+
+        Lỗi thường gặp trên Windows:
+          - PermissionError (errno 13) / WinError 5 "Access is denied":
+            cổng đang bị một tiến trình khác giữ. KHÔNG phải lỗi nguồn AC
+            hay dây TX/RX.
+          - FileNotFoundError (errno 2) / WinError 2:
+            cổng không tồn tại - thường là do thiết bị USB vừa được rút.
+        """
+        text = str(exc)
+        err = getattr(exc, "errno", None)
+        win = getattr(exc, "winerror", None)
+
+        if err == 13 or win == 5 or "Access is denied" in text or "PermissionError" in text:
+            return (
+                f"Không mở được cổng {self.port}: cổng đang bị tiến trình khác chiếm "
+                f"(Access is denied). "
+                f"Đây KHÔNG phải lỗi nguồn AC hay dây TX/RX. "
+                f"Hãy đóng mọi chương trình đang dùng cổng này "
+                f"(web server cũ, monitor serial, PlatformIO, PuTTY...) rồi chạy lại. "
+                f"Thao tác: Task Manager > chi tiết > tìm python.exe/putty.exe > End task."
+            )
+
+        if err == 2 or win == 2 or "FileNotFoundError" in text:
+            return (
+                f"Không mở được cổng {self.port}: cổng không tồn tại. "
+                f"Thiết bị USB-TTL có đang cắm không? "
+                f"Kiểm tra bằng: python -c \"import serial;print(serial.tools.list_ports())\""
+            )
+
+        return f"Không mở được cổng {self.port}: {text}"
 
     def close(self) -> None:
         if self._ser is not None:
