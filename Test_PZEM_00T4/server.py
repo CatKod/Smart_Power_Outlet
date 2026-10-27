@@ -77,6 +77,12 @@ def simulate_metrics(t: float) -> dict:
 # --------------------------------------------------------------------------- #
 # Luồng nền đọc PZEM
 # --------------------------------------------------------------------------- #
+def _is_port_busy(message: str) -> bool:
+    """Lỗi mở cổng có phải do cổng bị tiến trình khác chiếm không."""
+    return ("Access is denied" in message or "PermissionError" in message
+            or "bị tiến trình khác chiếm" in message)
+
+
 def pzem_worker(stop_event: threading.Event) -> None:
     """Giữ kết nối serial và cập nhật trạng thái toàn cục mỗi chu kỳ."""
     global _latest, _error, _connected, _samples, _last_ok_ts
@@ -137,7 +143,19 @@ def pzem_worker(stop_event: threading.Event) -> None:
         except PzemError as exc:
             _set_state(error=str(exc), connected=False)
             LOG.warning("Chưa kết nối được PZEM: %s", exc)
-            stop_event.wait(3.0)
+            # Cổng bị khoá bởi tiến trình khác sẽ không tự hết - thử lâu hơn
+            # và log nhắc người dùng, thay vì spam cùng một lỗi mỗi 3 giây.
+            if _is_port_busy(str(exc)):
+                LOG.error(
+                    "Cổng %s đang bị tiến trình khác chiếm. "
+                    "Đóng web server cũ / monitor serial / PlatformIO / PuTTY "
+                    "đang dùng cổng này rồi chạy lại. "
+                    "Không liên quan gì đến nguồn AC hay dây TX/RX.",
+                    _config["port"],
+                )
+                stop_event.wait(30.0)
+            else:
+                stop_event.wait(3.0)
             continue
         except Exception as exc:  # noqa: BLE001
             _set_state(error=f"Lỗi không mong đợi: {exc}", connected=False)
