@@ -1,1 +1,125 @@
+# ============================================================================
+#  Smart Power Outlet — root .gitignore
+#  Chỉ bỏ qua artifact sinh ra khi build/run; source, tài liệu, cấu hình vẫn được track.
+# ============================================================================
+
+# --- Bí mật / thông tin cá nhân ------------------------------------------------
 Smart_Power_Outlet_ESP/main/secrets.h
+**/secrets.h
+**/credentials.json
+**/.env
+**/.env.*
+!.env.example
+
+# --- Artifact build của ESP-IDF ------------------------------------------------
+# build/ chính + các thư mục build tạm dùng để verify (build_verify55, build_verify60...)
+build/
+build_*/
+**/build/
+*.bin
+*.elf
+*.map
+*.o
+*.a
+*.out
+*.obj
+*.lib
+sdkconfig
+sdkconfig.old
+dependencies.lock.bak
+flasher_args.json
+managed_components/
+.espressif/
+components/.idf/
+**/components/.idf/
+compile_commands.json
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+*.kicad_prl
+
+# --- PlatformIO ----------------------------------------------------------------
+.pio/
+.pioenvs/
+.piolibdeps/
+.piobuild/
+
+# --- Flutter / Dart ------------------------------------------------------------
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+**/build/
+*.iml
+
+# --- Java / Android ------------------------------------------------------------
+**/gradle/wrapper/gradle-wrapper.jar
+**/local.properties
+*.hprof
+captures/
+.externalNativeBuild/
+.cxx/
+
+# --- Python --------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node ----------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# --- IDE / Editor --------------------------------------------------------------
+.idea/
+.vscode/*
+!.vscode/c_cpp_properties.json
+!.vscode/launch.json
+!.vscode/settings.json
+*.code-workspace
+.clangd/
+.ccls-cache/
+
+# --- Logs, cache, tạm ----------------------------------------------------------
+*.log
+logs/
+log/
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+.cache/
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- Tool cục bộ / MCP / công cụ nội bộ ----------------------------------------
+.serial_mcp/
+.agy/
+.agentmemory/
+
+# --- Kết quả render tài liệu (sinh ra khi kiểm tra .docx) ----------------------
+docs/_render/
+docs/*.pdf
+docs/page-*.jpg
+docs/page-*.png
+*.pdf.tmp
