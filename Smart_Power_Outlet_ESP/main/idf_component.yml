@@ -15,4 +15,7 @@ dependencies:
   #   # All dependencies of `main` are public by default.
   #   public: true
   espressif/esp_wifi_remote: '==1.4.1'
-  espressif/esp_hosted: '*'
+  # Coprocessor C6 on this board runs esp-hosted firmware 2.12.3; the host side
+  # must match its major version or SDIO init fails with a version mismatch.
+  espressif/esp_hosted: '==2.12.3'
+  espressif/mqtt: '*'
