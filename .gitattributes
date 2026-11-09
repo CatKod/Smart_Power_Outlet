@@ -1,2 +1,16 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Binary documents (Office Open XML, EasyEDA project archives)
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.eprj2 binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.bin binary
+*.elf binary
