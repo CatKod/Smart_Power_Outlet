@@ -25,7 +25,7 @@
 | # | Thành phần | Chạy trên | Trách nhiệm | Giao tiếp | Trạng thái |
 |---|---|---|---|---|---|
 | **1** | **Electronic PC Agent** | Máy chủ giám sát trong tủ rack (Windows Server hoặc Linux host) | Đọc PZEM-004T liên tục; tự dò COM; lưu time-series; đánh giá ngưỡng & ghi sự cố; phục vụ API nội bộ | **Nhận:** Modbus-RTU qua USB-TTL (`\\.\COMx`) · **Cung cấp:** REST API `127.0.0.1:8000` · **Gửi (sau):** MQTT | **P0 — đang làm** |
-| **2** | **Central IoT Controller** | Vi điều khiển ESP32 / ESP32-P4 | Cấu hình & duy trì WiFi; subscriber MQTT; điều khiển relay; giám sát an toàn (quá nhiệt / quá tải → cắt relay) | Nhận MQTT qua WiFi · Điều khiển GPIO relay | **P1 — làm sau Track A, vẫn trong GR2** |
+| **2** | **Central IoT Controller** | Vi điều khiển **ESP32-S3 N16R8** (ESP-IDF 5.5.3, target `esp32s3`) | Cấu hình & duy trì WiFi; subscriber MQTT; điều khiển relay; đo điện qua PZEM #2 (UART1); giám sát an toàn (quá nhiệt / quá tải → cắt relay) | Nhận MQTT qua WiFi · Điều khiển GPIO relay · UART1 ↔ PZEM #2 | **P1 — làm sau Track A, vẫn trong GR2** |
 | **3** | **Web Server** | Máy chủ web trung tâm | Giao diện web + API người dùng; báo cáo; lịch sử sự kiện; cấu hình | Nhận REST / MQTT từ PC Agent | **P1 — đang dựng dần** |
 
 Sơ đồ: [`diagrams/system-architecture.md`](diagrams/system-architecture.md) (Mermaid + ASCII bản in).

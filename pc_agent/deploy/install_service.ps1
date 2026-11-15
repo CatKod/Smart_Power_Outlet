@@ -110,8 +110,9 @@ if (-not (Test-Path $ConfigPath)) {
         baudrate               = 9600
         poll_interval_s        = 1.0
         power_threshold_w      = 25000
-        voltage_min_v          = 180.0
-        voltage_max_v          = 260.0
+        current_threshold_a    = 10.0
+        voltage_min_v          = 198.0
+        voltage_max_v          = 242.0
         offline_after_s        = 30.0
         api_host               = $ApiHost
         api_port               = $ApiPort

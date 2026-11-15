@@ -164,10 +164,13 @@ Tôi sẽ gửi bạn: file **Gerber** + **BOM** + sơ đồ lắp. Bạn đặt
 
 | # | Việc | Vì sao | Mức |
 |---|---|---|---|
-| **1** | **Báo thầy đổi mật khẩu broker MQTT** (tài khoản thầy cấp, xem `Smart_power_outlet_PIO/include/secrets.h`) | Credential đã nằm trong repo **PUBLIC** (`github.com/CatKod/Smart_Power_Outlet`) → bất kỳ ai cũng đọc được | 🔴 Khẩn |
-| **2** | `pip install git-filter-repo` | Tôi cần để gỡ secret khỏi **toàn bộ lịch sử git** (không chỉ commit hiện tại) | 🔴 Khẩn |
-| **3** | Mua H-02, H-03, H-04 | Chặn Giai đoạn 2 | 🟡 |
-| **4** | Xác nhận: **ESP32-S3 của bạn là devkit nào?** (ESP32-S3-DevKitC-1 N16R8 hay board khác) | Tôi cần đúng sơ đồ chân + LED RGB đã tích hợp hay chưa | 🟡 |
+| **1** | **Mua H-02, H-03, H-04** (bóng LED + bóng sợi đốt + ổ lộ thiên) | Chặn Giai đoạn 2 — test thật trên máy | 🟡 |
+| **2** | **Cắm PZEM #1 + USB-TTL, bật 220 VAC**, báo tôi | Tôi chạy `--exhaustive-scan` để xác nhận cổng + địa chỉ slave | 🟡 |
+| **3** | **Chụp ảnh mặt trước + mặt sau board ESP32-S3** | Tôi cần xác nhận devkit nào, LED RGB có thật không, chân nào đã gắn sẵn | 🔴 |
+| **4** | Xác nhận với thầy: **broker MQTT dùng chung hay tự host** (Mosquitto trong Docker)? | Quyết định A-10 và Track C | 🟡 |
+| **5** | *(việc bảo mật do bạn tự lo, không chặn kế hoạch)* | Credential đã nằm trong repo **PUBLIC** từ trước → **báo thầy đổi mật khẩu broker**. Tôi đã scrub sạch 4 branch public; còn 1 ref `refs/pull/3/head` do GitHub đóng băng không scrub được | 🔴 |
+
+> ℹ️ **Mục 5 không chặn bất kỳ task kỹ thuật nào** trong kế hoạch — mọi thứ ở Giai đoạn 1 vẫn chạy bình thường.
 
 ---
 
@@ -181,5 +184,6 @@ Tôi sẽ gửi bạn: file **Gerber** + **BOM** + sơ đồ lắp. Bạn đặt
 | Test A-9-5 (rút/cắm) | H-09 USB hub | ⬜ |
 | Test A-9-6 (PORT_BUSY) | PuTTY | ⬜ |
 | Test A-5-4 (systemd) | `usbipd` trong WSL hoặc máy Linux thật | ⬜ |
-| Test B-2 (Track B) | H-01 + H-05 + H-06 + H-07 + H-08 | ⬜ |
+| Test B-4 (firmware S3) | H-01 + H-05 + H-06 + H-07 + H-08 | ⬜ |
+| Test B-5 (vòng lặp khép kín) | ESP32-S3 nối WiFi + broker chạy | ⬜ |
 | Test B-3 (PCB) | Đặt 5 board | ⬜ |

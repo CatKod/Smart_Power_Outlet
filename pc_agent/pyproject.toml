@@ -30,7 +30,9 @@ service = ["pywin32>=306; sys_platform == 'win32'"]
 # Giai đoạn sau: đẩy telemetry lên MQTT broker
 mqtt = ["paho-mqtt>=2.0"]
 # Test
-dev = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "psutil>=5.9"]
+# Soak test dài hạn (A-6-6) — psutil giúp đo RSS chính xác trên mọi OS.
+soak = ["psutil>=5.9"]
 
 [project.urls]
 Homepage = "https://github.com/HoangKimVinh/Smart_Power_Outlet"

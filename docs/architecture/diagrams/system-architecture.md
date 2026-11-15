@@ -31,7 +31,7 @@ flowchart TD
         WebServer["Web Server (Giao dien web & API nguoi dung)"]
     end
 
-    subgraph IoTControllerBox["2. Central IoT Controller (ESP32 / ESP32-P4) [P1 - lam sau Track A, van trong GR2]"]
+    subgraph IoTControllerBox["2. Central IoT Controller (ESP32-S3 N16R8) [P1 - lam sau Track A, van trong GR2]"]
         IoTController["Central IoT Controller (WiFi provisioning, relay, giam sat an toan)"]
     end
 
@@ -81,7 +81,7 @@ flowchart TD
          v                                            v
 
   +------------------------------------------+   +----------------------------------------------+
-   3. WEB SERVER - may chu web trung tam     |    2. CENTRAL IOT CONTROLLER - ESP32 / ESP32-P4  |
+   3. WEB SERVER - may chu web trung tam     |    2. CENTRAL IOT CONTROLLER - ESP32-S3 N16R8 |
                                              |                                                  |
    - Phuc vu giao dien web + API nguoi dung  |    - WiFi provisioning + duy tri ket noi         |
    - Doc du lieu qua REST/MQTT tu PC Agent   |    - MQTT subscriber nhan lenh dieu khien        |
@@ -107,7 +107,7 @@ flowchart TD
 | Thành phần | Chạy trên | Trách nhiệm | Giao tiếp |
 | :--- | :--- | :--- | :--- |
 | **1. Electronic PC Agent** | Máy chủ giám sát trong tủ rack (Windows Server: Service `SmartPowerOutletAgent` hoặc Linux host: `smart-power-agent.service`) | Chạy 24/7 headless, tự khởi động cùng OS không cần user login; tự dò tìm cổng COM (4 bậc); đọc dữ liệu cảm biến đo điện (1 Hz); đánh giá Rule Engine tức thời; lưu trữ chuỗi thời gian SQLite WAL; cung cấp REST API nội bộ và dashboard tĩnh. | - **Nhận**: Modbus-RTU 9600 8N1 qua USB-TTL (`\\.\COMx`)<br/>- **Cung cấp**: REST API tại `127.0.0.1:8000`<br/>- **Gửi (tương lai)**: MQTT publisher |
-| **2. Central IoT Controller** *(Trạng thái: P1 - làm sau Track A, vẫn trong GR2)* | Vi điều khiển ESP32 / ESP32-P4 (Firmware Arduino & ESP-IDF) | Là bộ điều khiển IoT trung tâm; cấu hình & duy trì kết nối WiFi (provisioning); subscriber nhận lệnh MQTT; điều khiển đóng/ngắt relay ổ cắm; giám sát an toàn (quá nhiệt, quá tải cắt relay). | - **Nhận**: MQTT subscriber qua WiFi<br/>- **Điều khiển**: GPIO tới relay ổ cắm |
+| **2. Central IoT Controller** *(Trạng thái: P1 - làm sau Track A, vẫn trong GR2)* | Vi điều khiển **ESP32-S3 N16R8** (firmware ESP-IDF 5.5.3, target `esp32s3`) | Là bộ điều khiển IoT trung tâm; cấu hình & duy trì kết nối WiFi (provisioning); subscriber nhận lệnh MQTT; điều khiển đóng/ngắt relay ổ cắm; đo điện qua PZEM #2 (UART1); giám sát an toàn (quá nhiệt, quá tải cắt relay). | - **Nhận**: MQTT subscriber qua WiFi<br/>- **Điều khiển**: GPIO 21 tới relay ổ cắm (active LOW)<br/>- **Đo**: UART1 (TX=17/RX=18) tới PZEM-004T #2 |
 | **3. Web Server** *(Trạng thái: Đang dựng dần)* | Máy chủ web trung tâm (Linux host hoặc cùng host rack) | Phục vụ giao diện web người dùng và API trung tâm; hiển thị dữ liệu đo đạc, báo cáo, lịch sử sự kiện. | - **Nhận**: REST API / MQTT từ PC Agent (tuyệt đối không cắm cổng serial trực tiếp) |
 
 ---

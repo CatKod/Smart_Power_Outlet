@@ -7,7 +7,7 @@ Hệ thống giám sát năng lượng cho **tổ hợp máy chủ trong tủ ra
 | # | Thành phần | Chạy trên | Trách nhiệm | Trạng thái |
 |---|---|---|---|---|
 | **1** | **Electronic PC Agent** | Máy chủ giám sát trong tủ rack | Đọc PZEM-004T liên tục, tự dò COM, lưu time-series, đánh giá ngưỡng & ghi sự cố, phục vụ REST API | **P0 — đang làm** |
-| **2** | **Central IoT Controller** | Vi điều khiển ESP32 / ESP32-P4 | Cấu hình & duy trì WiFi, subscriber MQTT, điều khiển relay, giám sát an toàn | **P1 — làm sau Track A, vẫn trong GR2** |
+| **2** | **Central IoT Controller** | Vi điều khiển **ESP32-S3 N16R8** (ESP-IDF 5.5.3) | Cấu hình & duy trì WiFi, subscriber MQTT, điều khiển relay, đo điện PZEM #2, giám sát an toàn | **P1 — làm sau Track A, vẫn trong GR2** |
 | **3** | **Web Server** | Máy chủ web trung tâm | Giao diện web + API người dùng, báo cáo, lịch sử sự kiện | **P1 — đang dựng dần** |
 
 Sơ đồ kiến trúc: [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) · [`docs/architecture/diagrams/`](docs/architecture/diagrams/)

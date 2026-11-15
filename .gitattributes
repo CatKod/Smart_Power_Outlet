@@ -1,6 +1,17 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
+# --- File phải là LF (Linux/macOS thực thi, systemd parse) ---
+# .sh bị CRLF sẽ hỏng khi chạy trên Linux ("syntax error near unexpected token").
+*.sh    text eol=lf
+*.service text eol=lf
+*.bash  text eol=lf
+
+# --- File phải là CRLF (Windows) ---
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
 # Binary documents (Office Open XML, EasyEDA project archives)
 *.docx binary
 *.xlsx binary

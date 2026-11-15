@@ -103,6 +103,49 @@
     display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
   }
   code { background: var(--card-2); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
+
+  /* ---------- Biểu đồ lịch sử (A-8-7) ---------- */
+  .chartcard {
+    margin-top: 18px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px;
+  }
+  .charthead {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 10px; margin-bottom: 14px;
+  }
+  .charthead .label { margin-bottom: 0; }
+  .ranges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ranges button {
+    background: var(--card-2); color: var(--muted); border: 1px solid var(--border);
+    padding: 5px 12px; border-radius: 7px; font-size: 12px; cursor: pointer;
+    font-family: inherit;
+  }
+  .ranges button:hover { color: var(--text); border-color: var(--accent); }
+  .ranges button.active {
+    background: rgba(56,189,248,.16); color: var(--accent);
+    border-color: var(--accent); font-weight: 600;
+  }
+  .chartwrap { position: relative; width: 100%; height: 420px; }
+  .chartwrap canvas { width: 100%; height: 100%; display: block; }
+  .chartmsg {
+    position: absolute; inset: 0; display: none; align-items: center;
+    justify-content: center; color: var(--muted); font-size: 13px;
+    text-align: center; padding: 0 20px;
+  }
+  .chartmsg.show { display: flex; }
+  .legend {
+    display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px;
+    font-size: 12px; color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  .tokennote {
+    margin-top: 12px; font-size: 12px; color: var(--muted);
+    padding: 9px 12px; background: rgba(251,191,36,.1);
+    border: 1px solid rgba(251,191,36,.35); border-radius: 8px;
+    display: none;
+  }
+  .tokennote.show { display: block; }
 </style>
 </head>
 <body>
@@ -152,6 +195,32 @@
     </div>
   </div>
 
+  <!-- Biểu đồ lịch sử (A-8-7) — Canvas thuần, không dùng thư viện ngoài -->
+  <div class="chartcard">
+    <div class="charthead">
+      <div class="label">Lịch sử</div>
+      <div class="ranges" id="ranges">
+        <button data-hours="1"  class="active">1 giờ</button>
+        <button data-hours="24">24 giờ</button>
+        <button data-hours="168">7 ngày</button>
+        <button data-hours="720">30 ngày</button>
+      </div>
+    </div>
+    <div class="chartwrap">
+      <canvas id="chart"></canvas>
+      <div class="chartmsg" id="chartmsg"></div>
+    </div>
+    <div class="legend">
+      <span><i class="swatch" style="background:#38bdf8"></i> Công suất (W) — lane trên</span>
+      <span><i class="swatch" style="background:#34d399"></i> Điện áp (V) — lane giữa</span>
+      <span><i class="swatch" style="background:#fbbf24"></i> Dòng điện (A) — lane dưới</span>
+    </div>
+    <div class="tokennote" id="tokennote">
+      ⚠ API đang yêu cầu xác thực. Mở trang bằng token:
+      <code id="tokenUrl">/?token=...</code>
+    </div>
+  </div>
+
   <footer>
     <span>Cập nhật tự động mỗi 1 giây &middot; Nguồn: <code id="srcPort">--</code></span>
     <span id="updated">Chưa có dữ liệu</span>
@@ -166,6 +235,25 @@
 </div>
 
 <script>
+  // ---- Token (A-8-6) --------------------------------------------------
+  // Khi API mở ra mạng, cần gửi header Authorization. Token lấy từ query
+  // string (?token=...) và lưu vào sessionStorage để các lần tải sau khỏi
+  // phải truyền lại.
+  const TOKEN_KEY = "pc_agent_token";
+  const params = new URLSearchParams(window.location.search);
+  let API_TOKEN = params.get("token") || sessionStorage.getItem(TOKEN_KEY) || "";
+  if (params.get("token")) {
+    sessionStorage.setItem(TOKEN_KEY, API_TOKEN);
+    // Dọn token khỏi thanh địa chỉ để không lọt vào lịch sử trình duyệt.
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+
+  function apiFetch(url) {
+    const headers = {};
+    if (API_TOKEN) headers["Authorization"] = "Bearer " + API_TOKEN;
+    return fetch(url, { cache: "no-store", headers });
+  }
+
   // Ánh xạ: id phần tử -> [tên trường trong /api/metrics, số chữ số]
   const FIELDS = {
     voltage:      ["voltage_v",     1],
@@ -182,7 +270,11 @@
 
   async function tick() {
     try {
-      const res = await fetch("/api/metrics", { cache: "no-store" });
+      const res = await apiFetch("/api/metrics");
+      if (res.status === 401) {
+        showAuthRequired();
+        return;
+      }
       const data = await res.json();
       const m = data.metrics;
 
@@ -240,8 +332,256 @@
     }
   }
 
+  // ===================================================================== //
+  //  Biểu đồ lịch sử (A-8-7) — Canvas thuần, không thư viện ngoài          //
+  // ===================================================================== //
+  const CHART = {
+    canvas: null, ctx: null, dpr: 1,
+    hours: 24, rows: [], series: [], range: null,
+  };
+
+  const SERIES = [
+    { key: "power_w",       color: "#38bdf8", label: "Công suất (W)", digits: 0 },
+    { key: "voltage_v",     color: "#34d399", label: "Điện áp (V)",    digits: 0 },
+    { key: "current_a",     color: "#fbbf24", label: "Dòng điện (A)",  digits: 2 },
+  ];
+
+  function showAuthRequired() {
+    const note = document.getElementById("tokennote");
+    const msg  = document.getElementById("chartmsg");
+    const url  = document.getElementById("tokenUrl");
+    if (note) note.className = "tokennote show";
+    if (url) {
+      url.textContent = window.location.origin + window.location.pathname
+        + "?token=" + (API_TOKEN || "<token>");
+    }
+    if (msg) {
+      msg.textContent = "Cần token để xem biểu đồ.";
+      msg.className = "chartmsg show";
+    }
+    const dot = document.getElementById("dot");
+    const statusText = document.getElementById("statusText");
+    if (dot) dot.className = "dot err";
+    if (statusText) statusText.textContent = "Cần xác thực";
+  }
+
+  function setupCanvas() {
+    const canvas = document.getElementById("chart");
+    if (!canvas) return;
+    CHART.canvas = canvas;
+    CHART.ctx = canvas.getContext("2d");
+    resizeCanvas();
+    window.addEventListener("resize", () => { resizeCanvas(); drawChart(); });
+  }
+
+  function resizeCanvas() {
+    if (!CHART.canvas) return;
+    const rect = CHART.canvas.getBoundingClientRect();
+    CHART.dpr = window.devicePixelRatio || 1;
+    CHART.canvas.width  = Math.max(1, Math.round(rect.width  * CHART.dpr));
+    CHART.canvas.height = Math.max(1, Math.round(rect.height * CHART.dpr));
+  }
+
+  function setRange(hours) {
+    CHART.hours = hours;
+    document.querySelectorAll("#ranges button").forEach(b => {
+      b.className = (Number(b.dataset.hours) === hours) ? "active" : "";
+    });
+    loadHistory();
+  }
+
+  async function loadHistory() {
+    const msg = document.getElementById("chartmsg");
+    const hours = CHART.hours;
+    const until = Date.now() / 1000;
+    const from  = until - hours * 3600;
+    // 24 giờ -> raw (1 Hz); lâu hơn -> hourly để không tải hàng trăm nghìn điểm.
+    const resolution = hours <= 24 ? "raw" : "hourly";
+    const limit = hours <= 24 ? 20000 : 2000;
+
+    if (msg) { msg.textContent = "Đang tải dữ liệu..."; msg.className = "chartmsg show"; }
+
+    try {
+      const res = await apiFetch(
+        "/api/history?resolution=" + resolution + "&limit=" + limit
+        + "&from=" + from + "&to=" + until
+      );
+      if (res.status === 401) { showAuthRequired(); return; }
+      const data = await res.json();
+      const rows = data.rows || [];
+
+      if (!rows.length) {
+        if (msg) {
+          msg.textContent = "Chưa có dữ liệu trong khoảng thời gian này.";
+          msg.className = "chartmsg show";
+        }
+        CHART.rows = [];
+        drawChart();
+        return;
+      }
+      if (msg) msg.className = "chartmsg";
+
+      // Chuẩn hoá: API trả timestamp kiểu Unix (raw) hoặc bucket_start (hourly).
+      CHART.rows = rows
+        .map(r => ({
+          t: Number(r.timestamp ?? r.bucket_start ?? 0),
+          power: r.power_w ?? r.power_avg_w ?? null,
+          volt:  r.voltage_v ?? r.voltage_avg_v ?? null,
+          curr:  r.current_a ?? r.current_avg_a ?? null,
+        }))
+        .filter(r => r.t > 0)
+        .sort((a, b) => a.t - b.t);
+
+      computeRanges();
+      drawChart();
+    } catch (err) {
+      if (msg) {
+        msg.textContent = "Không tải được lịch sử: " + err.message;
+        msg.className = "chartmsg show";
+      }
+    }
+  }
+
+  function computeRanges() {
+    CHART.range = {};
+    SERIES.forEach(s => {
+      const vals = CHART.rows.map(getValOf(s)).filter(v => v != null && !Number.isNaN(v));
+      if (!vals.length) { CHART.range[s.key] = null; return; }
+      let lo = Math.min(...vals), hi = Math.max(...vals);
+      if (hi === lo) { lo -= 1; hi += 1; }   // tránh chia cho 0
+      // Nới biên 10% để đường không chạm sát mép lane.
+      const pad = (hi - lo) * 0.10;
+      CHART.range[s.key] = { lo: lo - pad, hi: hi + pad };
+    });
+  }
+
+  function getValOf(s) {
+    const field = s.key === "power_w" ? "power"
+                : s.key === "voltage_v" ? "volt" : "curr";
+    return (row) => row[field];
+  }
+
+  function drawChart() {
+    if (!CHART.ctx) return;
+    const ctx = CHART.ctx;
+    const W = CHART.canvas.width, H = CHART.canvas.height;
+    const dpr = CHART.dpr;
+
+    ctx.clearRect(0, 0, W, H);
+
+    const PAD = { l: 62 * dpr, r: 14 * dpr, t: 10 * dpr, b: 26 * dpr };
+    const plotW = W - PAD.l - PAD.r;
+    const plotH = H - PAD.t - PAD.b;
+    if (plotW <= 0 || plotH <= 0) return;
+
+    const rows = CHART.rows;
+
+    // --- Chia vùng vẽ thành 3 lane chồng nhau (overlay lanes) -------------
+    // Mỗi series một lane riêng. Nhờ vậy:
+    //   - các đường KHÔNG chồng lên nhau dù hình dạng giống nhau
+    //     (công suất và dòng điện thường biến động cùng pha);
+    //   - mỗi lane có trục Y riêng với đơn vị đúng, không ép chung thang.
+    const activeSeries = SERIES.filter(s => CHART.range[s.key]);
+    const laneCount = activeSeries.length || 1;
+    const laneGap = 6 * dpr;
+    const laneH = (plotH - laneGap * (laneCount - 1)) / laneCount;
+
+    ctx.font = (11 * dpr) + "px system-ui, sans-serif";
+
+    if (!rows.length) {
+      // Không có dữ liệu: chỉ vẽ lưới chung cho đỡ trống.
+      ctx.strokeStyle = "rgba(148,163,184,.14)";
+      ctx.lineWidth = 1 * dpr;
+      for (let i = 0; i <= 4; i++) {
+        const y = PAD.t + (plotH * i) / 4;
+        ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+      }
+      return;
+    }
+
+    const tMin = rows[0].t, tMax = rows[rows.length - 1].t;
+    const tSpan = Math.max(tMax - tMin, 1);
+
+    activeSeries.forEach((s, idx) => {
+      const r = CHART.range[s.key];
+      const laneTop = PAD.t + idx * (laneH + laneGap);
+      const laneBot = laneTop + laneH;
+      const getVal = getValOf(s);
+
+      // --- Lưới ngang riêng cho lane ---
+      ctx.strokeStyle = "rgba(148,163,184,.12)";
+      ctx.lineWidth = 1 * dpr;
+      ctx.setLineDash([]);
+      for (let i = 0; i <= 2; i++) {
+        const y = laneTop + (laneH * i) / 2;
+        ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+      }
+
+      // --- Đường dữ liệu ---
+      ctx.beginPath();
+      let started = false;
+      rows.forEach((row) => {
+        const v = getVal(row);
+        if (v == null || Number.isNaN(v)) { started = false; return; }
+        const x = PAD.l + ((row.t - tMin) / tSpan) * plotW;
+        const y = laneBot - ((v - r.lo) / (r.hi - r.lo)) * laneH;
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else { ctx.lineTo(x, y); }
+      });
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 2 * dpr;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+
+      // --- Nhãn trục Y của lane (min/max) ---
+      const vals = rows.map(getVal).filter(v => v != null && !Number.isNaN(v));
+      if (vals.length) {
+        const maxV = Math.max(...vals);
+        const minV = Math.min(...vals);
+        ctx.fillStyle = s.color;
+        ctx.textAlign = "right";
+        ctx.textBaseline = "top";
+        ctx.font = (10 * dpr) + "px system-ui, sans-serif";
+        ctx.fillText(maxV.toFixed(s.digits), PAD.l - 6 * dpr, laneTop + 1 * dpr);
+        ctx.fillStyle = "#64748b";
+        ctx.textBaseline = "bottom";
+        ctx.fillText(minV.toFixed(s.digits), PAD.l - 6 * dpr, laneBot - 1 * dpr);
+      }
+    });
+
+    // --- Trục thời gian (dùng chung cho cả 3 lane) ---
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = (11 * dpr) + "px system-ui, sans-serif";
+    const tickCount = Math.min(6, Math.max(2, Math.floor(plotW / (90 * dpr))));
+    for (let i = 0; i <= tickCount; i++) {
+      const x = PAD.l + (plotW * i) / tickCount;
+      const t = tMin + (tSpan * i) / tickCount;
+      ctx.fillText(formatTime(t, tSpan), x, PAD.t + plotH + 8 * dpr);
+    }
+  }
+
+  function formatTime(t, span) {
+    const d = new Date(t * 1000);
+    if (span > 3 * 86400) return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
+    if (span > 86400) return d.toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  // ---- Khởi động -------------------------------------------------------
+  document.addEventListener("DOMContentLoaded", () => {
+    setupCanvas();
+    document.querySelectorAll("#ranges button").forEach(b => {
+      b.addEventListener("click", () => setRange(Number(b.dataset.hours)));
+    });
+    setRange(24);
+  });
+
   tick();
   setInterval(tick, 1000);
+  // Nạp lại biểu đồ mỗi 30 giây (mọi 1 giây sẽ quá nặng cho DB).
+  setInterval(loadHistory, 30000);
 </script>
 </body>
 </html>

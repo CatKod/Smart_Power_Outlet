@@ -15,8 +15,9 @@ import logging
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 LOG = logging.getLogger("pc_agent.storage")
 
@@ -98,8 +99,28 @@ class TelemetryStore:
         conn.execute("PRAGMA busy_timeout=5000;")
         return conn
 
+    @contextmanager
+    def _session(self) -> Iterator[sqlite3.Connection]:
+        """Mở connection, commit khi thoát và **đóng connection**.
+
+        ⚠️ Vì sao không dùng `with self._connect() as conn`?
+        `with connection` của sqlite3 chỉ quản lý **transaction** (commit /
+        rollback) — nó KHÔNG đóng connection. Connection chỉ được giải phóng
+        khi biến `conn` ra khỏi scope, tức là vào cuối hàm. Với poller ghi
+        mẫu mỗi giây, điều này giữ nhiều connection mở đồng thời và dẫn tới
+        lỗi *"database table is locked"* khi một connection khác cần ghi.
+
+        `contextlib.closing` đảm bảo connection được `close()` thật sự.
+        """
+        conn = self._connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def _init_schema(self) -> None:
-        with self._lock, self._connect() as conn:
+        with self._lock, self._session() as conn:
             conn.executescript(SCHEMA)
         LOG.info("Đã khởi tạo cơ sở dữ liệu %s", self.db_path)
 
@@ -107,7 +128,7 @@ class TelemetryStore:
     def insert_sample(self, sample: Dict[str, Any]) -> None:
         """Ghi một mẫu thô."""
         ts = sample["timestamp"]
-        with self._lock, self._connect() as conn:
+        with self._lock, self._session() as conn:
             conn.execute(
                 """
                 INSERT INTO telemetry_raw (
@@ -139,7 +160,7 @@ class TelemetryStore:
         current_hour = (int(now) // 3600) * 3600
         previous_hour = current_hour - 3600
 
-        with self._lock, self._connect() as conn:
+        with self._lock, self._session() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO telemetry_hourly (
@@ -176,18 +197,31 @@ class TelemetryStore:
                 (previous_hour, previous_hour, current_hour),
             )
 
-    def purge_expired(self, raw_days: int = 14, hourly_days: int = 365) -> None:
-        """Xoá dữ liệu cũ vượt thời hạn."""
+    def purge_expired(self, raw_days: float = 14, hourly_days: float = 365) -> None:
+        """Xoá dữ liệu cũ vượt thời hạn.
+
+        Tham số nhận `float` để không ép kiểu khi gọi từ công cụ soak test.
+        """
         now = time.time()
-        with self._lock, self._connect() as conn:
+        with self._lock, self._session() as conn:
             conn.execute(
                 "DELETE FROM telemetry_raw WHERE timestamp < ?", (now - raw_days * 86400,)
             )
             conn.execute(
                 "DELETE FROM telemetry_hourly WHERE bucket_start < ?",
-                (now - hourly_days * 86400),
+                (now - hourly_days * 86400,),
             )
-            conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
+
+        # `PRAGMA wal_checkpoint` KHÔNG chạy được bên trong một transaction
+        # đang mở → sqlite3 báo "database table is locked". Phải dùng
+        # connection riêng, ngoài transaction.
+        with self._lock, self._session() as conn:
+            try:
+                conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
+            except sqlite3.OperationalError as exc:
+                # PASSIVE không được thì không sao — WAL sẽ tự được checkpoint
+                # khi đủ ngưỡng. Không nên làm agent chết vì việc này.
+                LOG.debug("wal_checkpoint bỏ qua: %s", exc)
 
     # ------------------------------------------------------------------ #
     def log_event(
@@ -201,7 +235,7 @@ class TelemetryStore:
     ) -> None:
         """Ghi một sự kiện (cảnh báo / lỗi)."""
         ts = time.time()
-        with self._lock, self._connect() as conn:
+        with self._lock, self._session() as conn:
             conn.execute(
                 """
                 INSERT INTO events (
@@ -224,7 +258,7 @@ class TelemetryStore:
 
     def resolve_event(self, event_type: str, meter_id: Optional[str] = None) -> None:
         """Đánh dấu sự kiện đang mở là đã xử lý."""
-        with self._lock, self._connect() as conn:
+        with self._lock, self._session() as conn:
             conn.execute(
                 """
                 UPDATE events SET resolved_at = ?
@@ -268,7 +302,7 @@ class TelemetryStore:
             lo = since if since is not None else 0.0
             hi = until if until is not None else time.time()
 
-        with self._lock, self._connect() as conn:
+        with self._lock, self._session() as conn:
             rows = conn.execute(
                 sql, (meter_id or self.meter_id, lo, hi, limit)
             ).fetchall()
@@ -282,13 +316,13 @@ class TelemetryStore:
             sql += " WHERE resolved_at IS NULL"
         sql += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
-        with self._lock, self._connect() as conn:
+        with self._lock, self._session() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
     def stats(self, meter_id: Optional[str] = None) -> Dict[str, Any]:
         """Thống kê nhanh (dùng cho API /health)."""
-        with self._lock, self._connect() as conn:
+        with self._lock, self._session() as conn:
             row = conn.execute(
                 """
                 SELECT COUNT(*) AS samples, MIN(timestamp) AS first_ts, MAX(timestamp) AS last_ts

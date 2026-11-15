@@ -1,70 +1,61 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-  Mẫu systemd cho PC Agent (Linux daemon).
+# Mẫu systemd cho PC Agent (Linux daemon).
+#
+# Cài đặt:
+#   sudo ./install_linux.sh
+#
+# Yêu cầu: user `smartpower` phải nằm trong nhóm `dialout` để đọc cổng
+# serial (/dev/ttyUSB0, /dev/ttyACM0).
 
-  Cài đặt:
-    sudo cp smart-power-agent.service /etc/systemd/system/
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now smart-power-agent.service
+[Unit]
+Description=Smart Power Outlet - Electronic PC Agent
+Documentation=https://github.com/CatKod/Smart_Power_Outlet
+After=network.target
+Wants=network.target
 
-  Yêu cầu: user `smartpower` phải nằm trong nhóm `dialout` để đọc cổng
-  serial (/dev/ttyUSB0, /dev/ttyACM0).
--->
-<service>
-  <Unit>
-    <description>Smart Power Outlet - Electronic PC Agent</description>
-    <Documentation>https://github.com/HoangKimVinh/Smart_Power_Outlet</Documentation>
-    <After>network.target
-    <Wants>network.target
-  </Unit>
+[Service]
+Type=simple
+User=smartpower
+Group=dialout
 
-  <Service>
-    <Type>simple</Type>
-    <User>smartpower</User>
-    <Group>dialout</Group>
+WorkingDirectory=/opt/smartpower
+ExecStart=/opt/smartpower/venv/bin/python -m pc_agent --no-console-log
+ExecReload=/bin/kill -HUP $MAINPID
 
-    <WorkingDirectory>/opt/smartpower</WorkingDirectory>
-    <ExecStart>/opt/smartpower/venv/bin/python -m pc_agent --no-console-log</ExecStart>
-    <ExecReload>/bin/kill -HUP $MAINPID</ExecReload>
+Restart=always
+RestartSec=5s
+TimeoutStopSec=15s
 
-    <Restart>always</Restart>
-    <RestartSec>5s</RestartSec>
-    <TimeoutStopSec>15s</TimeoutStopSec>
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smart-power-agent
 
-    <StandardOutput>journal</StandardOutput>
-    <StandardError>journal</StandardError>
-    <SyslogIdentifier>smart-power-agent</SyslogIdentifier>
+# Thư mục quản lý do systemd tạo và gán quyền
+ConfigurationDirectory=smartpower
+StateDirectory=smartpower
+LogsDirectory=smartpower
 
-    <!-- Thư mục quản lý do systemd tạo và gán quyền -->
-    <ConfigurationDirectory>smartpower</ConfigurationDirectory>
-    <StateDirectory>smartpower</StateDirectory>
-    <LogsDirectory>smartpower</LogsDirectory>
+# Biến môi trường cho ứng dụng
+Environment=SMARTPOWER_CONFIG_DIR=/etc/smartpower
+Environment=SMARTPOWER_DATA_DIR=/var/lib/smartpower
+Environment=SMARTPOWER_LOG_DIR=/var/log/smartpower
+Environment=PYTHONUNBUFFERED=1
 
-    <!-- Biến môi trường cho ứng dụng -->
-    <Environment>SMARTPOWER_CONFIG_DIR=/etc/smartpower</Environment>
-    <Environment>SMARTPOWER_DATA_DIR=/var/lib/smartpower</Environment>
-    <Environment>SMARTPOWER_LOG_DIR=/var/log/smartpower</Environment>
-    <Environment>PYTHONUNBUFFERED=1</Environment>
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
 
-    <!-- Hardening -->
-    <NoNewPrivileges>true</NoNewPrivileges>
-    <PrivateTmp>true</PrivateTmp>
-    <ProtectSystem>strict</ProtectSystem>
-    <ProtectHome>true</ProtectHome>
-    <ProtectKernelTunables>true</ProtectKernelTunables>
-    <ProtectKernelModules>true</ProtectKernelModules>
-    <ProtectControlGroups>true</ProtectControlGroups>
-    <RestrictRealtime>true</RestrictRealtime>
-    <RestrictNamespaces>true</RestrictNamespaces>
-    <LockPersonality>true</LockPersonality>
+# Quyền truy cập thiết bị serial
+DeviceAllow=/dev/ttyUSB0 rw
+DeviceAllow=/dev/ttyUSB1 rw
+DeviceAllow=/dev/ttyACM0 rw
 
-    <!-- Quyền truy cập thiết bị serial -->
-    <DeviceAllow>/dev/ttyUSB0 rw</DeviceAllow>
-    <DeviceAllow>/dev/ttyUSB1 rw</DeviceAllow>
-    <DeviceAllow>/dev/ttyACM0 rw</DeviceAllow>
-  </Service>
-
-  <Install>
-    <WantedBy>multi-user.target</WantedBy>
-  </Install>
-</service>
+[Install]
+WantedBy=multi-user.target

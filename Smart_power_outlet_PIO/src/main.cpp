@@ -12,7 +12,8 @@
  *   1. WiFi Captive Portal Provisioning (WiFiManager)
  *   2. MQTT control relay qua topic "home/socket/cmd" (ON/OFF)
  *   3. Publish trạng thái relay lên "home/socket/status"
- *   4. Relay trên RELAY_GPIO (GPIO 20), khôi phục trạng thái sau reboot (Preferences)
+ *   4. Relay trên RELAY_GPIO (xem build_flags trong platformio.ini — mỗi board một chân),
+ *      khôi phục trạng thái sau reboot (Preferences)
  *   5. Reset button (giữ RESET_BTN_GPIO 3 giây) → xoá WiFi credentials → restart
  */
 
@@ -37,6 +38,9 @@
 
 // =========================================================================
 // Cấu hình pin theo board (được truyền qua build_flags trong platformio.ini)
+//   env esp32wroom → RELAY_GPIO=32, RESET_BTN_GPIO=0
+//   env esp32p4     → RELAY_GPIO=20, RESET_BTN_GPIO=35
+//   env esp8266     → RELAY_GPIO=5,  RESET_BTN_GPIO=0
 // =========================================================================
 #ifndef RELAY_GPIO
 #  define RELAY_GPIO     20

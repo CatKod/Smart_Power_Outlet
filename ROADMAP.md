@@ -69,7 +69,7 @@
 | # | Thành phần | Chạy trên | Trách nhiệm | Giao tiếp | Trạng thái |
 |---|---|---|---|---|---|
 | **1** | **Electronic PC Agent** | Máy chủ giám sát trong tủ rack | Đọc PZEM-004T liên tục, tự dò COM, lưu trữ time-series, đánh giá ngưỡng, phục vụ API nội bộ | **Nhận:** Modbus-RTU qua USB-TTL · **Cung cấp:** REST API `127.0.0.1:8000` · **Gửi (sau):** MQTT | **P0 — đang làm** |
-| **2** | **Central IoT Controller** | Vi điều khiển ESP32 / ESP32-P4 | Cấu hình & duy trì WiFi, subscriber MQTT, điều khiển relay, giám sát an toàn | Nhận MQTT qua WiFi · Điều khiển GPIO relay | **P1 — làm sau Track A, vẫn trong GR2** |
+| **2** | **Central IoT Controller** | Vi điều khiển **ESP32-S3 N16R8** (16 MB Flash / 8 MB Octal PSRAM) | Cấu hình & duy trì WiFi, subscriber MQTT, điều khiển relay, giám sát an toàn | Nhận MQTT qua WiFi · Điều khiển GPIO relay · Đọc PZEM #2 qua UART1 | **P1 — làm sau Track A, vẫn trong GR2** |
 | **3** | **Web Server** | Máy chủ web trung tâm | Giao diện web + API người dùng, báo cáo, lịch sử sự kiện | Nhận REST/MQTT từ PC Agent — **không** cắm serial trực tiếp | **P1 — đang dựng dần** |
 
 > **Vì sao Web Server không cắm serial trực tiếp?** Windows cho phép **chỉ một** tiến trình giữ cổng COM tại một thời điểm (tiến trình thứ hai nhận `Access is denied`). PC Agent là tiến trình duy nhất sống 24/7 và giữ phiên serial. Nếu Web Server mở cùng cổng, giám sát sẽ bị gián đoạn. Vì vậy ranh giới bắt buộc là: **PC Agent = tầng thiết bị (edge)**, **Web Server = tầng trình diễn (application)**.
@@ -130,7 +130,7 @@ Thư mục: `pc_agent/`. Đây là sản phẩm chính của GR2.
 - [x] **A-4-7** Script `deploy/install_service.ps1` (tạo venv, copy package, ghi config ban đầu, đăng ký, cấu hình recovery, mở firewall nếu bind ngoài localhost) và `deploy/uninstall_service.ps1`.
 - [ ] **A-4-8** ⚠️ **Test trên máy thật:** cài → reboot → service tự lên → đọc dữ liệu → kill tiến trình → SCM tự khởi động lại. **Chưa làm.**
 - [ ] **A-4-9** ⚠️ **Xác minh quyền đọc cổng COM khi chạy dưới LocalSystem** (Session 0). **Chưa làm.**
-- [ ] **A-4-10** ⚠️ Viết **sự cố đã biết** vào `docs/operations/TROUBLESHOOTING.md`: cổng bị chiếm, thiết bị bị rút, chưa có nguồn AC, đổi số COM.
+- [x] **A-4-10** ⚠️ Viết **sự cố đã biết** vào `docs/operations/TROUBLESHOOTING.md`: cổng bị chiếm, thiết bị bị rút, chưa có nguồn AC, đổi số COM.
 
 **DoD:** sau khi cài, `sc query SmartPowerOutletAgent` = `RUNNING` ngay sau reboot mà **không ai phải đăng nhập**; API trả `{"status":"healthy"}`.
 
@@ -140,7 +140,7 @@ Thư mục: `pc_agent/`. Đây là sản phẩm chính của GR2.
 - [x] **A-5-2** `ConfigurationDirectory=` / `StateDirectory=` / `LogsDirectory=` (đường dẫn XDG tương ứng).
 - [x] **A-5-3** `DeviceAllow=/dev/ttyUSB0 rw` + hardening (`NoNewPrivileges`, `ProtectSystem`, `PrivateTmp`).
 - [ ] **A-5-4** ⚠️ Test trên máy Linux (VM hoặc Raspberry Pi): `systemctl enable --now`, `journalctl -u`.
-- [ ] **A-5-5** ⚠️ Script cài đặt systemd (`install_linux.sh`) + tài liệu tương ứng.
+- [x] **A-5-5** ⚠️ Script cài đặt systemd (`install_linux.sh` + `uninstall_linux.sh`, bash, `set -euo pipefail`, idempotent) + tài liệu.
 
 **DoD:** `systemctl is-enabled` = `enabled`; agent tự lên sau reboot.
 
@@ -151,9 +151,17 @@ Thư mục: `pc_agent/`. Đây là sản phẩm chính của GR2.
 - [x] **A-6-3** Bảng `events` (cảnh báo / sự cố) với `resolved_at` để biết sự kiện nào đang mở.
 - [x] **A-6-4** Chế độ **WAL** + `synchronous=NORMAL` → đọc được đồng thời khi đang ghi.
 - [x] **A-6-5** Tổng hợp theo giờ chạy mỗi 5 phút; dọn dữ liệu cũ mỗi giờ.
-- [ ] **A-6-6** ⚠️ Test: chạy 24 h liên tục, không rò rỉ disk, kích thước DB ổn định.
+- [ ] **A-6-6** ⚠️ Test: chạy 24 h liên tục, không rò rỉ disk, kích thước DB ổn định. Có script `pc_agent/tools/soak_test.py` chạy `--simulate` 24 h, đo kích thước DB/WAL theo chu kỳ.
 
 **DoD:** DB 1 file, tự dọn theo retention, đọc/ghi song song không lỗi.
+
+> 📌 **2026-11-15 — script soak đã viết & đã chạy thử (45 s), phát hiện 3 lỗi production đã sửa:**
+> 1. `sqlite_store.py` — `with sqlite3.connect(...)` chỉ quản lý transaction, **không đóng connection** → rò handle → `database table is locked`. Đã thêm `_session()` dùng `contextlib.closing`.
+> 2. `sqlite_store.py` — `purge_expired()` thiếu dấu phẩy cuối tuple → `sqlite3.ProgrammingError` **mọi lần gọi** → retention (dọn dữ liệu cũ) **không bao giờ chạy**. Đã sửa + tách `PRAGMA wal_checkpoint` ra connection riêng (PRAGMA không chạy được trong transaction).
+> 3. `deploy/smart-power-agent.service` — file viết theo **cú pháp XML** thay vì **INI** của systemd → `systemd` không load được. Đã viết lại đúng chuẩn.
+>
+> Kết quả sau khi sửa: DB/WAL/SHM ổn định, WAL được truncate về 0, RSS phẳng (+0.3 %).
+> **Phần còn lại:** chạy thật 24 h cần máy bật liên tục → `python pc_agent/tools/soak_test.py --duration 86400 --interval 300`.
 
 ### 2.7 A-7 — Rule Engine & ghi nhận sự cố  `P0` ✅ *đã hiện thực*
 
@@ -164,8 +172,8 @@ Thầy nói rõ: *"Các sự cố phát hiện được và ghi lại là rất 
 - [x] **A-7-3** **Tự đóng sự kiện** khi trở lại bình thường (`resolved_at`) — không spam log.
 - [x] **A-7-4** Đánh giá **trong tiến trình**, không đẩy lên broker: độ trễ < 1 ms, và cảnh báo vẫn kêu được khi mất mạng (đúng tình huống máy chủ rack).
 - [ ] **A-7-5** ⚠️ **Test ngưỡng thực tế:** dùng bóng đèn/tải biến thiên vượt ngưỡng → xác nhận sự kiện ghi vào DB và hiện trên API.
-- [ ] **A-7-6** ⚠️ Thêm ngưỡng **quá dòng** và **sụt áp nghiêm ngặt hơn** theo thông số thực tế của tủ rack.
-- [ ] **A-7-7** ⚠️ Gửi **thông báo tổng hợp** (email/Telegram webhook) khi có sự kiện mức `critical`.
+- [x] **A-7-6** ⚠️ Thêm ngưỡng **quá dòng** (`current_threshold_a`) + **siết ngưỡng sụt áp** theo thông số tủ rack (220 V ±10 % → 198–242 V, thay vì 180–260 V hiện tại). Thêm field vào `AgentConfig` + `RuleEngine` + `/api/config`.
+- [x] **A-7-7** ⚠️ Gửi **thông báo tổng hợp** khi có sự kiện mức `critical`. Thiết kế: package `notifiers/` với interface `Notifier` + `TelegramNotifier` (webhook, timeout 5 s, retry backoff). **Agent không được chết vì webhook lỗi** → thread riêng + queue.
 
 **DoD:** mỗi loại sự cố đều sinh đúng 1 bản ghi `events`, tự đóng khi hết, và xuất hiện trong `/api/events`.
 
@@ -176,17 +184,17 @@ Thầy nói rõ: *"Các sự cố phát hiện được và ghi lại là rất 
 - [x] **A-8-3** Mặc định bind `127.0.0.1`; mở ra LAN là **tuy chọn có chủ đích** (`--host 0.0.0.0` + firewall rule).
 - [x] **A-8-4** Bearer token tùy chọn (`api_token`) — hiện chưa bật mặc định.
 - [x] **A-8-5** Dashboard tĩnh `web/index.html` — hiện số đo trực tiếp, trạng thái kết nối, sự kiện.
-- [ ] **A-8-6** ⚠️ **Bật xác thực mặc định** khi bind ngoài localhost (bắt buộc — hiện là tuỳ chọn).
-- [ ] **A-8-7** ⚠️ Biểu đồ lịch sử (24 h / 7 ngày / 30 ngày) — dùng `/api/history` với `resolution=raw|hourly`.
+- [x] **A-8-6** ⚠️ **Bắt buộc xác thực khi bind ngoài localhost.** Khi `api_host` không phải loopback → tự sinh token `secrets.token_urlsafe(32)`, in ra log 1 lần + ghi `api_token.txt` (mode 600), **từ chối khởi động** nếu không tạo được token. So sánh bằng `hmac.compare_digest`. Thêm `--rotate-token` + `POST /api/config/token`.
+- [x] **A-8-7** ⚠️ Biểu đồ lịch sử (24 h / 7 ngày / 30 ngày) — dùng `/api/history` với `resolution=raw|hourly`. Vẽ **Canvas/SVG thuần** (không CDN, giữ "bề mặt tấn công nhỏ"): đường P (W), V (V), I (A).
 
 **DoD:** dashboard mở được từ máy khác trong LAN; `/api/health` trả `healthy` trong < 50 ms.
 
 ### 2.9 A-9 — Bền vững vận hành (Production hardening)  `P1`
 
-- [ ] **A-9-1** Health check + watchdog: agent im lặng > 3 chu kỳ → ghi sự kiện `DEVICE_OFFLINE`.
-- [ ] **A-9-2** Giới hạn tốc độ log khi lỗi lặp (tránh làm đầy ổ đĩa khi cổng hỏng).
-- [ ] **A-9-3** **Version stamping**: `/api/health` trả version của package + git commit.
-- [ ] **A-9-4** **Backup** cấu hình + DB (`%ProgramData%\SmartPowerOutlet`), lịch tự động.
+- [x] **A-9-1** Health check + watchdog: agent im lặng > 3 chu kỳ → ghi sự kiện `DEVICE_OFFLINE`. (`offline_after_s` đã có trong config nhưng **chưa dùng**.)
+- [x] **A-9-2** Giới hạn tốc độ log khi lỗi lặp (suppression theo message-signature, ~60 s → log 1 lần + đếm số lần bị chặn).
+- [x] **A-9-3** **Version stamping**: `/api/health` trả version package + **git commit SHA** + thời điểm build (fallback `"unknown"`).
+- [x] **A-9-4** **Backup** cấu hình + DB vào `%ProgramData%\SmartPowerOutlet\backup\`, lịch hằng ngày, giữ 7 bản. Dùng SQLite **backup API** (`conn.backup()`) chứ không copy file thô (tránh hỏng DB khi đang ghi WAL).
 - [ ] **A-9-5** Test **rút/cắm USB-TTL giữa lúc đang chạy**: agent phải tự ghi `DEVICE_OFFLINE`, thử lại sau 5 s, và **tự kết nối lại** khi cắm lại.
 - [ ] **A-9-6** Test **cổng bị chiếm** bởi PuTTY/PlatformIO: agent phải báo đúng `PORT_BUSY` (không phải lỗi nguồn).
 
@@ -194,7 +202,7 @@ Thầy nói rõ: *"Các sự cố phát hiện được và ghi lại là rất 
 
 ### 2.10 A-10 — MQTT uplink  `P1` *(nối Track B & C)*
 
-- [ ] **A-10-1** Client `paho-mqtt` (optional dependency `[mqtt]`), mặc định **tắt**.
+- [ ] **A-10-1** Client `paho-mqtt` (optional dependency `[mqtt]`), mặc định **tắt**. Credential đọc từ **biến môi trường**, không hardcode.
 - [ ] **A-10-2** Topic `smartoutlet/rack/<rack_id>/meter/<meter_id>` + sub-topic `telemetry` / `state` / `event`.
 - [ ] **A-10-3** Publish trạng thái **kết nối** lên broker (`online`/`offline` retained) — để Web Server biết agent còn sống.
 - [ ] **A-10-4** Reconnect tự động với backoff luỹ thừa; agent **không** chết vì broker chết.
@@ -220,13 +228,25 @@ Thầy nói rõ: *"Các sự cố phát hiện được và ghi lại là rất 
 
 ### 3.2 B-2 — Firmware đo điện & điều khiển relay  `P1`
 
-- [ ] **B-2-1** `PowerMonitor` (API độc lập phần cứng): RMS, công suất, PF, điện năng, NTC.
-- [ ] **B-2-2** Task FreeRTOS riêng cho sampling; publish qua queue.
+> **Board đã chốt: ESP32-S3 N16R8.** Firmware viết mới bằng **ESP-IDF 5.5.3** (target `esp32s3`) — *không* chuyển code PlatformIO P4 sang S3 vì framework (Arduino vs ESP-IDF) lẫn SoC đều khác. Tái sử dụng *ý tưởng* từ `Smart_power_outlet_PIO/src/wifi_prov.cpp` và `Smart_Power_Outlet_ESP/main/wifi_prov.c`.
+>
+> ⚠️ **Pin map đã xác minh từ header ESP-IDF 5.5.3** (`components/soc/esp32s3/include/soc/spi_pins.h`):
+> relay = **GPIO 21** (active LOW) · LED = **GPIO 48** · nút reset WiFi = **GPIO 0** · UART1 TX=**17**/RX=**18** · I2C = **8/9**.
+> **Cấm GPIO 22–37** (bus MSPI octal dùng chung flash + PSRAM) và **19/20** (USB native).
+
+- [ ] **B-4-0** Project ESP-IDF 5.5.3 cho `esp32s3` variant **N16R8**; `sdkconfig.defaults`: flash 16 MB, `CONFIG_SPIRAM_MODE_OCT=y`. Xác minh `idf.py build` + `idf.py size`.
+- [ ] **B-4-1** `board_pins.h` định nghĩa pin map + comment cấm GPIO 22–37.
+- [ ] **B-2-1** `PowerMonitor` (API độc lập phần cứng): RMS, công suất, PF, điện năng, NTC. **Tách lớp transport ↔ protocol** y hệt `drivers/pzem004t.py` (bài học: *"Serial là hạ tầng vật lý, Modbus chỉ là giao thức"*).
+- [ ] **B-2-2** Task FreeRTOS riêng cho sampling; publish qua queue sang task MQTT.
 - [ ] **B-2-3** MQTT client (`smartoutlet/<dev_id>/...`), điều khiển relay, cắt relay khi quá nhiệt/quá tải.
+
+### 3.3 B-5 — Vòng lặp khép kín `P2`
+
+- [ ] **B-5-1** Kịch bản tích hợp quan trọng nhất của GR2: bật tải → ESP32-S3 đo → publish MQTT → PC Agent nhận → ghi SQLite → dashboard hiện → **ESP32 tự cắt relay khi vượt ngưỡng** → PZEM #1 thấy công suất về 0.
 
 ### 3.3 B-3 — Phần cứng EasyEDA  `P2`
 
-- [ ] **B-3-1** Schematic EasyEDA (nguồn 220 VAC → HLK-PM01 → LDO 3V3; relay + driver; ESP32-C3; nút BOOT/RESET).
+- [ ] **B-3-1** Schematic EasyEDA (nguồn 220 VAC → HLK-PM01 → LDO 3V3; **ESP32-S3**; relay + driver active LOW; nút BOOT/RESET; 2 cổng UART).
 - [ ] **B-3-2** Khe cắm **I2C** đánh dấu rõ trên silkscreen: `3V3 / GND / SDA / SCL`, có nhãn "I2C", pull-up 4.7 kΩ.
 - [ ] **B-3-3** Khoảng cách creepage/clearance ≥ 3 mm giữa phần cao áp và phần logic; test point cho 3V3/GND/SDA/SCL.
 - [ ] **B-3-4** BOM + Gerber + đặt 1 lô 5 board.
@@ -252,8 +272,8 @@ Thầy nói rõ: *"Các sự cố phát hiện được và ghi lại là rất 
 
 - [ ] **D-1** `docs/architecture/ARCHITECTURE.md` — mô hình 3 thành phần, luồng dữ liệu, ánh xạ thư mục. ✅ *đã tạo*
 - [ ] **D-2** `docs/architecture/diagrams/` — sơ đồ Mermaid + ASCII (kiến trúc tổng thể, nội bộ agent, vòng đời service). ✅ *đã tạo*
-- [ ] **D-3** `docs/operations/TROUBLESHOOTING.md` — lỗi thường gặp của service (đang là A-4-10).
-- [ ] **D-4** `docs/operations/INSTALL.md` — cài Windows Service + Linux daemon từ đầu.
+- [x] **D-3** `docs/operations/TROUBLESHOOTING.md` — lỗi thường gặp của service (đang là A-4-10).
+- [x] **D-4** `docs/operations/INSTALL.md` — cài Windows Service + Linux daemon từ đầu.
 - [ ] **D-5** Báo cáo tiến độ GR2 Tuần 2 (docx) — mô hình 3 thành phần + kết quả test service.
 - [ ] **D-6** Cập nhật `ROADMAP.md` + `README.md` mỗi cuối tuần.
 
@@ -263,11 +283,10 @@ Thầy nói rõ: *"Các sự cố phát hiện được và ghi lại là rất 
 
 | Tuần | Nội dung | Mốc bàn giao |
 |---|---|---|
-| **Tuần 2** | A-4-8, A-4-9 (test service thật), A-4-10, A-5-4, A-5-5, A-7-5, A-8-6, A-8-7, D-3, D-4 | **Service chạy 24/7 thật trên máy** + tài liệu vận hành |
-| **Tuần 3** | A-9 (hardening), A-10 (MQTT), C-1 (tách Web Server), D-5 | **MQTT uplink + Web Server tách riêng** |
-| **Tuần 4** | Test 24 h, C-2…C-5, D-6 | **Báo cáo GR2 + demo** |
-| **Trong GR2, sau Tuần 3** | **B-1** (thư viện WiFi provisioning) → **B-2** (firmware đo điện & relay) | Controller ESP32 chạy được, nối MQTT với PC Agent |
-| **Trong GR2, nếu còn thời gian** | B-3 (phần cứng EasyEDA) | Board đầu tiên về đến tay |
+| **Tuần 2** | Giai đoạn 1 (12 task P0: A-8-6/7, A-9-1..4, A-7-6/7, A-5-5, A-6-6, A-4-10, D-4) + Giai đoạn 2 (A-4-8/9, A-7-5, A-9-5/6, A-5-4) | **Service chạy 24/7 thật trên máy** + tài liệu vận hành + dashboard có biểu đồ |
+| **Tuần 3** | A-10 (MQTT), C-1 (tách Web Server), D-5 | **MQTT uplink + Web Server tách riêng** |
+| **Tuần 4** | Test 24 h, C-2…C-5, D-6, **B-4-0…B-4-4** (firmware ESP32-S3) | **Báo cáo GR2 + demo** + firmware S3 chạy được |
+| **Trong GR2, sau Tuần 4** | **B-5** (vòng lặp khép kín) → **B-3** (phần cứng EasyEDA) | Controller điều khiển relay qua MQTT, đo được PZEM #2 |
 | **Phần dở dang (nếu hết thời gian GR2)** | Phần chưa xong của Track B chuyển sang đầu **GR3** | Không mất gì — phần đã làm giữ nguyên |
 
 ---
@@ -291,6 +310,6 @@ Thầy nói rõ: *"Các sự cố phát hiện được và ghi lại là rất 
 1. **Mô hình 3 thành phần** — thầy xác nhận mô hình này đúng ý chưa? Đặc biệt: Web Server **không** cắm serial mà đọc từ PC Agent.
 2. **Phạm vi GR2** — thầy có cần thêm tính năng gì cho PC Agent trong GR2 không (ví dụ: xuất CSV, gửi email cảnh báo, hỗ trợ nhiều PZEM)?
 3. **Cách chạy thực tế** — trong tủ rack, PC Agent chạy trên **Windows Server** hay **Linux**? (Ảnh hưởng việc hoàn thiện A-4 hay A-5 trước.)
-4. **ESP32 trong GR2** — em định làm Track B **sau Track A** (B-1 thư viện WiFi → B-2 firmware đo điện & relay → B-3 phần cứng), vẫn kịp trong GR2. Thầy thấy thứ tự này ổn chứ?
+4. **ESP32 trong GR2** — em định làm Track B **sau Track A** (B-4 firmware ESP32-S3 → B-5 vòng lặp khép kín → B-3 phần cứng), vẫn kịp trong GR2. Thầy thấy thứ tự này ổn chứ?
 5. **Bảo mật API** — có yêu cầu đặt mật khẩu cho dashboard / API không?
 6. **Báo cáo GR2 Tuần 2** — thầy muốn nhấn mạnh phần nào: tính "service" hay tính "mô hình tổng thể"?

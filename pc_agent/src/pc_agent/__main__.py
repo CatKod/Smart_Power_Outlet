@@ -28,11 +28,14 @@ from pathlib import Path
 from typing import Optional
 
 from .api.server import AgentServer
+from .auth import ensure_token, is_loopback
+from .backup import BackupScheduler
 from .config import AgentConfig, ConfigStore, database_path, log_dir
 from .core.poller import ModbusPoller
 from .core.rules import RuleEngine
 from .core.state import StateStore
 from .logging_setup import setup_logging
+from .notifiers import build_default_dispatcher
 from .storage.sqlite_store import TelemetryStore
 
 LOG = logging.getLogger("pc_agent")
@@ -85,14 +88,25 @@ class AgentRuntime:
         self.config_store = config_store or ConfigStore()
         self.state = StateStore()
         self.store = TelemetryStore(database_path(), config.meter_id)
-        self.rules = RuleEngine(config, self.store)
+        # Thông báo tổng hợp (A-7-7) — dispatcher có thread riêng, agent
+        # không bao giờ chết vì thông báo lỗi.
+        self.notifier = build_default_dispatcher()
+        self.rules = RuleEngine(config, self.store, notifier=self.notifier)
         self.poller: Optional[ModbusPoller] = None
         self.server: Optional[AgentServer] = None
+        self.backup: Optional[BackupScheduler] = None
         self.stop_event = threading.Event()
         self.simulate = simulate
 
     def start(self) -> None:
-        self.server = AgentServer(self.config, self.state, self.store)
+        self.notifier.start()
+
+        self.server = AgentServer(
+            self.config,
+            self.state,
+            self.store,
+            config_store=self.config_store,
+        )
         self.server.start()
 
         self.poller = ModbusPoller(
@@ -105,12 +119,24 @@ class AgentRuntime:
         )
         self.poller.start()
 
+        # Backup tự động (A-9-4) — thread riêng, không chặn vòng lấy mẫu.
+        self.backup = BackupScheduler(
+            self.config,
+            config_store=self.config_store,
+            interval_s=self.config.extra.get("backup_interval_s", 86400.0),
+            keep=int(self.config.extra.get("backup_keep", 7)),
+        )
+        self.backup.start()
+
     def stop(self) -> None:
         self.stop_event.set()
+        if self.backup is not None:
+            self.backup.stop()
         if self.poller is not None:
             self.poller.stop()
         if self.server is not None:
             self.server.stop()
+        self.notifier.stop()
         self.state.set_connected(False)
 
     def wait(self) -> None:
@@ -124,6 +150,7 @@ def run_agent(
     config_store: Optional[ConfigStore] = None,
     simulate: bool = False,
     console: bool = True,
+    rotate_token: bool = False,
 ) -> int:
     """Chạy agent tới khi bị dừng. Trả về mã thoát."""
     setup_logging(log_dir(), console=console)
@@ -135,6 +162,26 @@ def run_agent(
         LOG.warning("Chế độ mô phỏng — không đọc phần cứng thật.")
         cfg.port = cfg.port or "SIMULATED"
         cfg.slave_address = 0x01
+
+    # --- Xác thực API (A-8-6) -------------------------------------------
+    # Bind ngoài localhost => xác thực BẮT BUỘC. Nếu không tạo/lấy được
+    # token thì từ chối khởi động (fail-closed) — không bao giờ chạy với
+    # API mở ra mạng mà không có cửa.
+    if not is_loopback(cfg.api_host):
+        LOG.warning(
+            "API sẽ lắng nghe trên %s (không phải localhost) — bắt buộc xác thực.",
+            cfg.api_host,
+        )
+    token = ensure_token(cfg, store, force_new=rotate_token)
+    if token is None and not is_loopback(cfg.api_host):
+        LOG.error(
+            "Không thiết lập được token API cho chế độ mở mạng — TỪ CHỐI KHỞI ĐỘNG. "
+            "Kiểm tra quyền ghi trên thư mục cấu hình (%s).",
+            log_dir(),
+        )
+        return 3
+    if rotate_token:
+        LOG.info("Đã xoay token API. Đọc token mới tại file api_token.txt.")
 
     runtime = AgentRuntime(cfg, store, simulate=simulate)
     install_signal_handlers(runtime.stop_event)
@@ -189,6 +236,11 @@ def parse_args(argv=None) -> argparse.Namespace:
         action="store_true",
         help="Không ghi log ra console (dùng khi chạy dưới service)",
     )
+    p.add_argument(
+        "--rotate-token",
+        action="store_true",
+        help="Sinh token API mới (dùng khi nghi ngờ token bị lộ)",
+    )
     return p.parse_args(argv)
 
 
@@ -234,6 +286,7 @@ def main(argv=None) -> int:
         config_store=store,
         simulate=args.simulate,
         console=not args.no_console_log,
+        rotate_token=args.rotate_token,
     )
 
 

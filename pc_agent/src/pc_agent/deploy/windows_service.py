@@ -57,6 +57,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from pc_agent.__main__ import AgentRuntime  # noqa: E402
+from pc_agent.auth import ensure_token, is_loopback  # noqa: E402
 from pc_agent.config import ConfigStore, log_dir  # noqa: E402
 from pc_agent.logging_setup import setup_logging  # noqa: E402
 
@@ -127,6 +128,24 @@ if os.name == "nt":
 
             store = ConfigStore()
             config = store.load()
+
+            # --- Xác thực API (A-8-6) ------------------------------------
+            # Service chạy ở Session 0, không có console để hỏi người dùng →
+            # phải tự thiết lập token. Nếu bind ngoài localhost mà không
+            # tạo được token thì **từ chối khởi động** (fail-closed).
+            if not is_loopback(config.api_host):
+                LOG.warning(
+                    "API lắng nghe trên %s (không phải localhost) — bắt buộc xác thực.",
+                    config.api_host,
+                )
+            token = ensure_token(config, store)
+            if token is None and not is_loopback(config.api_host):
+                LOG.error(
+                    "Không thiết lập được token API — TỪ CHỐI KHỞI ĐỘNG service. "
+                    "Kiểm tra quyền ghi trên thư mục cấu hình."
+                )
+                raise RuntimeError("Không thiết lập được token API")
+
             self.runtime = AgentRuntime(config, store)
 
             try:

@@ -200,3 +200,31 @@ docs/*.pdf
 docs/page-*.jpg
 docs/page-*.png
 *.pdf.tmp
+
+# --- Artifact của PC Agent (không bao giờ track) --------------------------------
+# Database telemetry + WAL/SHM
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Báo cáo soak test (A-6-6) — sinh ra khi chạy, dung lượng lớn
+soak_report.json
+soak_report.csv
+
+# Token API — sinh ra ở lần chạy đầu, TUYỆT ĐỐI không commit
+api_token.txt
+*_token.txt
+
+# Thư mục dữ liệu/log runtime của agent
+/soak_data/
+pc_agent/data/
+pc_agent/logs/
+
+# --- Kết quả test / coverage ---------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml

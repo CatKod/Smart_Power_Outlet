@@ -61,6 +61,9 @@ class ModbusPoller(threading.Thread):
         self._last_rollup = 0.0
         self._last_purge = 0.0
         self._sim_tick = 0
+        # Watchdog (A-9-1): thời điểm nhận mẫu thành công gần nhất.
+        self._last_sample_at: Optional[float] = None
+        self._offline_logged = False
 
     # ------------------------------------------------------------------ #
     # Điều khiển
@@ -145,6 +148,7 @@ class ModbusPoller(threading.Thread):
         result = self.discovery.discover()
         if result is None or not result.ok:
             self.state.set_connected(False)
+            self._check_watchdog()
             if result is not None and result.status == "PORT_BUSY":
                 self.state.set_error(result.detail)
                 LOG.warning("Cổng đang bị chiếm: %s", result.detail)
@@ -227,6 +231,8 @@ class ModbusPoller(threading.Thread):
                 self.state.set_sample(sample)
                 self.store.insert_sample(sample)
                 self.rules.evaluate(sample)
+                self._last_sample_at = time.time()
+                self._offline_logged = False
 
                 self._maybe_maintenance()
 
@@ -243,10 +249,39 @@ class ModbusPoller(threading.Thread):
             self._stop_event.wait(self.config.poll_interval_s)
 
     # ------------------------------------------------------------------ #
+    def _check_watchdog(self) -> None:
+        """Watchdog (A-9-1): ghi `DEVICE_OFFLINE` khi im lặng quá lâu.
+
+        Ngưỡng lấy từ `config.offline_after_s` (mặc định 30 s). Ý nghĩa: nếu
+        agent **không nhận được mẫu nào** trong khoảng thời gian đó, thì
+        coi như thiết bị đã offline — kể cả khi `discovery` không báo lỗi
+        rõ ràng (ví dụ cổng vẫn mở được nhưng thiết bị im lặng).
+
+        Chỉ ghi **một lần** cho mỗi lần offline; khi có dữ liệu trở lại thì
+        `rules.clear_offline()` đóng sự kiện và cờ `_offline_logged` reset.
+        """
+        if self._last_sample_at is None:
+            return
+
+        limit = float(getattr(self.config, "offline_after_s", 30.0) or 30.0)
+        silent_for = time.time() - self._last_sample_at
+        if silent_for < limit or self._offline_logged:
+            return
+
+        self._offline_logged = True
+        reason = (
+            f"Không nhận được dữ liệu trong {silent_for:.0f}s "
+            f"(ngưỡng {limit:.0f}s) — coi như thiết bị offline."
+        )
+        LOG.error("Watchdog: %s", reason)
+        self.rules.mark_offline(reason)
+
+    # ------------------------------------------------------------------ #
     def _handle_pzem_error(self, message: str) -> None:
         """Phân loại lỗi đọc và quyết định thời gian chờ trước khi thử lại."""
         self.state.set_error(message)
         self._close_session()
+        self._check_watchdog()
 
         busy = ("Access is denied" in message or "PermissionError" in message
                 or "bị tiến trình khác chiếm" in message)

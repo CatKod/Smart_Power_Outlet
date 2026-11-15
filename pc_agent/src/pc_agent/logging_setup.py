@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from .rate_limit import install_rate_limit_filter
+
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -47,6 +49,14 @@ def setup_logging(
     root.setLevel(level)
     for handler in list(root.handlers):
         root.removeHandler(handler)
+
+    # --- Bộ lọc chống log lặp (A-9-2) ------------------------------------
+    # Cài ở mức root: mọi logger con đều qua bộ lọc này. Xóa filter cũ
+    # (nếu setup_logging được gọi lại) để không nhân bản.
+    for flt in list(root.filters):
+        if type(flt).__name__ == "RateLimitFilter":
+            root.removeFilter(flt)
+    install_rate_limit_filter(root)
 
     # --- Handler file: luôn có, kể cả Session 0 ---
     try:

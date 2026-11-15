@@ -28,6 +28,17 @@ APP_NAME = "SmartPowerOutlet"
 # PZEM-004T V3.0 cho phép tối đa 25000 W qua thanh ghi 0x0001.
 DEFAULT_POWER_THRESHOLD_W = 25000
 
+# Ngưỡng quá dòng mặc định (A).
+# PZEM-004T V3.0 đo tối đa 100 A; một ổ cắm 10 A lấy điện cho cả tủ rack
+# nên ngưỡng đặt ở 10 A để bắt cảnh báo sớm trước khi quá tải thật.
+DEFAULT_CURRENT_THRESHOLD_A = 10.0
+
+# Dải điện áp lưới chấp nhận được (V) — theo tiêu chuẩn điện áp 220 V ±10 %
+# (198–242 V) thay vì dải rộng 180–260 V. Siết ngưỡng giúp bắt được hiện
+# tượng sụt áp trong tủ rack, vốn là dấu hiệu tải vượt khả năng nguồn.
+DEFAULT_VOLTAGE_MIN_V = 198.0
+DEFAULT_VOLTAGE_MAX_V = 242.0
+
 
 # --------------------------------------------------------------------------- #
 # Đường dẫn theo nền tảng
@@ -112,8 +123,9 @@ class AgentConfig:
 
     # --- Ngưỡng cảnh báo ---
     power_threshold_w: int = DEFAULT_POWER_THRESHOLD_W
-    voltage_min_v: float = 180.0
-    voltage_max_v: float = 260.0
+    current_threshold_a: float = DEFAULT_CURRENT_THRESHOLD_A
+    voltage_min_v: float = DEFAULT_VOLTAGE_MIN_V
+    voltage_max_v: float = DEFAULT_VOLTAGE_MAX_V
     offline_after_s: float = 30.0
 
     # --- API ---
