@@ -164,7 +164,7 @@ Tôi sẽ gửi bạn: file **Gerber** + **BOM** + sơ đồ lắp. Bạn đặt
 
 | # | Việc | Vì sao | Mức |
 |---|---|---|---|
-| **1** | **Báo thầy đổi mật khẩu broker MQTT** (tk `REDACTED_MQTT_USERNAME`) | Credential đã nằm trong repo **PUBLIC** (`github.com/CatKod/Smart_Power_Outlet`) → bất kỳ ai cũng đọc được | 🔴 Khẩn |
+| **1** | **Báo thầy đổi mật khẩu broker MQTT** (tài khoản thầy cấp, xem `Smart_power_outlet_PIO/include/secrets.h`) | Credential đã nằm trong repo **PUBLIC** (`github.com/CatKod/Smart_Power_Outlet`) → bất kỳ ai cũng đọc được | 🔴 Khẩn |
 | **2** | `pip install git-filter-repo` | Tôi cần để gỡ secret khỏi **toàn bộ lịch sử git** (không chỉ commit hiện tại) | 🔴 Khẩn |
 | **3** | Mua H-02, H-03, H-04 | Chặn Giai đoạn 2 | 🟡 |
 | **4** | Xác nhận: **ESP32-S3 của bạn là devkit nào?** (ESP32-S3-DevKitC-1 N16R8 hay board khác) | Tôi cần đúng sơ đồ chân + LED RGB đã tích hợp hay chưa | 🟡 |
