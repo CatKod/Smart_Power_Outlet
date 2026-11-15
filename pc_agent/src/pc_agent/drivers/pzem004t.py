@@ -362,8 +362,8 @@ class Pzem004T:
 
         Bảng thanh ghi (mỗi thanh ghi 16 bit, truyền theo thứ tự tăng dần):
             0x0000  Điện áp            0.1 V
-            0x0001  Dòng điện thấp     0.001 A   ┐ ghép thành 32 bit
-            0x0002  Dòng điện cao                ┘ (cao đứng trước, thấp đứng sau)
+            0x0001  Dòng điện thấp     0.001 A    ┐ ghép thành 32 bit
+            0x0002  Dòng điện cao                ┘ (thấp đứng trước, cao đứng sau)
             0x0003  Công suất thấp     0.1 W     ┐
             0x0004  Công suất cao                ┘
             0x0005  Điện năng thấp     1 Wh      ┐
@@ -382,7 +382,7 @@ class Pzem004T:
         def u32(i: int) -> int:
             """Đọc 1 giá trị 32 bit gồm 2 thanh ghi liên tiếp.
 
-            Theo tài liệu, thanh ghi CAO đứng trước, thanh ghi THẤP đứng sau,
+            Theo tài liệu, thanh ghi THẤP đứng trước, thanh ghi CAO đứng sau,
             nên giá trị = (cao << 16) | thấp.
             """
             low = u16(i)

@@ -6,9 +6,9 @@ import time
 
 import serial
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 
-from pzem004t import (  # noqa: E402
+from pc_agent.drivers.pzem004t import (  # noqa: E402
     CMD_READ_HOLDING, PZEM_DEFAULT_ADDRESS, build_read_frame, crc16_modbus,
 )
 

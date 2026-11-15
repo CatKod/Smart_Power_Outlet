@@ -70,12 +70,12 @@
     margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap;
     align-items: center;
   }
-  button.tool {
+  button.tool, a.tool {
     background: var(--card-2); color: var(--text); border: 1px solid var(--border);
     padding: 8px 14px; border-radius: 8px; font-size: 13px; cursor: pointer;
-    font-family: inherit;
+    font-family: inherit; text-decoration: none; display: inline-block;
   }
-  button.tool:hover { background: #31405a; border-color: var(--accent); }
+  button.tool:hover, a.tool:hover { background: #31405a; border-color: var(--accent); }
   button.tool:disabled { opacity: .5; cursor: not-allowed; }
   .toolout { color: var(--muted); font-size: 12px; }
 
@@ -158,19 +158,26 @@
   </footer>
 
   <div class="tools">
-    <button class="tool" id="btnScan">Dò địa chỉ slave</button>
-    <button class="tool" id="btnSettings">Đọc tham số slave</button>
-    <span class="toolout" id="toolOut"></span>
+    <a class="tool" href="/api/config" target="_blank">Cấu hình</a>
+    <a class="tool" href="/api/history?resolution=hourly&amp;limit=48" target="_blank">Lịch sử (48 giờ)</a>
+    <a class="tool" href="/api/events?limit=20" target="_blank">Sự kiện</a>
+    <a class="tool" href="/api/health" target="_blank">Health</a>
   </div>
 </div>
 
 <script>
-  const FIELDS = ["voltage", "current", "power", "energy", "frequency", "power_factor"];
-  const DECIMALS = { voltage: 1, current: 3, power: 1, energy: 0, frequency: 1, power_factor: 2 };
-  function fmt(v, key) {
+  // Ánh xạ: id phần tử -> [tên trường trong /api/metrics, số chữ số]
+  const FIELDS = {
+    voltage:      ["voltage_v",     1],
+    current:      ["current_a",     3],
+    power:        ["power_w",       1],
+    energy:       ["energy_wh",     0],
+    frequency:    ["frequency_hz",  1],
+    power_factor: ["power_factor",  2],
+  };
+  function fmt(v, digits) {
     if (v === null || v === undefined || Number.isNaN(v)) return "--";
-    const d = DECIMALS[key] ?? 2;
-    return Number(v).toFixed(d);
+    return Number(v).toFixed(digits);
   }
 
   async function tick() {
@@ -179,15 +186,15 @@
       const data = await res.json();
       const m = data.metrics;
 
-      FIELDS.forEach((f) => {
-        const el = document.getElementById(f);
-        if (el) el.textContent = m ? fmt(m[f], f) : "--";
+      Object.entries(FIELDS).forEach(([id, [key, digits]]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = m ? fmt(m[key], digits) : "--";
       });
 
       const energyKwh = document.getElementById("energyKwh");
       if (energyKwh) {
         energyKwh.textContent = m && m.energy_kwh != null
-          ? fmt(m.energy_kwh, "energy_kwh") + " kWh"
+          ? fmt(m.energy_kwh, 4) + " kWh"
           : "-- kWh";
       }
 
@@ -215,7 +222,7 @@
         const addr = data.address != null
           ? " · slave 0x" + Number(data.address).toString(16).toUpperCase().padStart(2, "0")
           : "";
-        src.textContent = `${data.port} @ ${data.baud} baud${addr} · ${proto}`;
+        src.textContent = `${data.port || "--"} · ${proto}${addr}`;
       }
 
       const meta = document.getElementById("meta");
@@ -232,26 +239,6 @@
       document.getElementById("statusText").textContent = "Lỗi kết nối web";
     }
   }
-
-  async function callTool(url, label, btn) {
-    const out = document.getElementById("toolOut");
-    btn.disabled = true;
-    out.textContent = label + "...";
-    try {
-      const res = await fetch(url, { cache: "no-store" });
-      const data = await res.json();
-      out.textContent = label + ": " + (data.result || data.error || JSON.stringify(data));
-    } catch (err) {
-      out.textContent = label + ": lỗi " + err;
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
-  document.getElementById("btnScan").addEventListener("click", (e) =>
-    callTool("/api/scan", "Đang dò", e.currentTarget));
-  document.getElementById("btnSettings").addEventListener("click", (e) =>
-    callTool("/api/settings", "Đang đọc", e.currentTarget));
 
   tick();
   setInterval(tick, 1000);

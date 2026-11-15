@@ -3,9 +3,9 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
-from pzem004t import Pzem004T, crc16_modbus  # noqa: E402
+from pc_agent.drivers.pzem004t import Pzem004T, crc16_modbus  # noqa: E402
 
 RESPONSE = bytes([
     0x01, 0x04, 0x14,              # addr, func, byte count = 20

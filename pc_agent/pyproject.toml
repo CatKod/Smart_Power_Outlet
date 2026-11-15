@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smart-power-outlet-pc-agent"
+version = "1.0.0"
+description = "Electronic PC Agent - dich vu Modbus-RTU giam sat nang luong PZEM-004T cho tu rack"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Hoang Kim Vinh" }]
+keywords = ["modbus", "rtu", "pzem-004t", "energy-meter", "windows-service", "iot", "rack"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Home Automation",
+    "Topic :: System :: Monitoring",
+    "Environment :: No Input/Output (Daemon)",
+]
+
+# Phụ thuộc cốt lõi: chỉ pyserial. Mọi thứ khác dùng thư viện chuẩn Python
+# để giữ bề mặt tấn công nhỏ cho một dịch vụ chạy 24/7 trên máy chủ.
+dependencies = [
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+# Khi chạy dưới dạng Windows Service (SCM)
+service = ["pywin32>=306; sys_platform == 'win32'"]
+# Giai đoạn sau: đẩy telemetry lên MQTT broker
+mqtt = ["paho-mqtt>=2.0"]
+# Test
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://github.com/HoangKimVinh/Smart_Power_Outlet"
+
+[project.scripts]
+# Chạy foreground (phát triển / demo)
+pc-agent = "pc_agent.__main__:main"
+# Chạy dưới dạng Windows Service (SCM gọi entry point này)
+pc-agent-service = "pc_agent.deploy.windows_service:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pc_agent*"]
+
+[tool.setuptools.package-data]
+pc_agent = ["web/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

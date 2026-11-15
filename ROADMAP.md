@@ -1,429 +1,296 @@
-# Smart Power Outlet — Roadmap công việc
+# Smart Power Outlet — Lộ trình công việc
 
-> Tài liệu này sắp xếp lại toàn bộ nội dung đã trao đổi với GVHD thành các **workstream (W)**, có **thứ tự ưu tiên**, **phụ thuộc**, **Definition of Done** và **ghi chú kỹ thuật**.
-> Cập nhật lần cuối: 2026-10-26 · Trạng thái tổng: **GR2 ~70 %**
-
----
-
-## 0. Mục tiêu & tài sản hiện có
-
-**Mục tiêu sản phẩm**
-
-- Một **thư viện Arduino** (và bản ESP-IDF component) dùng để **cấu hình + duy trì WiFi** cho thiết bị IoT, phát hành công khai lên **Arduino Library Registry** (và/hoặc **ESP Component Registry**), có thể tái sử dụng cho mọi đồ án khác.
-- Một **module đo điện** (dòng tiêu thụ 2 dạng mạch, điện áp, nhiệt độ NTC) + **mạch in EasyEDA** hoàn chỉnh, đánh dấu rõ khe cắm I2C.
-- Ứng dụng điều khiển ổ cắm thông minh (Flutter) dùng lại 2 thành phần trên.
-
-**Tài sản đã có trong repo**
-
-| Đường dẫn | Nội dung | Trạng thái |
-| --- | --- | --- |
-| `WiFiConf/` | Sample thư viện `WiFiSetting` v3.0.0 (`ConfigManager`, `WiFiManager`, `WiFiSelfEnroll`, `WiFiEnrollBySerial`) | Nền để fork/refactor |
-| `Smart_power_outlet_PIO/` | Firmware Arduino (ESP32-WROOM / ESP32-P4 / ESP8266), `wifi_prov.*` + MQTT relay | Đang chạy được, `wifi_prov` còn sơ khai |
-| `Smart_Power_Outlet_ESP/` | Firmware ESP-IDF (để nhắm ESP Component Registry) | Song song, cần đồng bộ API |
-| `smart_power_outlet_app/` | App Flutter (Android/iOS/Windows) | Đã có khung |
-| `hardware/smart_outlet/` | Schematic KiCad + tool ERC (`hardware/tools/*.py`) | Sơ bộ, chưa có PCB EasyEDA |
-
-**Quy ước**
-
-- `P0` = chặn tiến độ / phải xong trước · `P1` = bắt buộc cho GR3 · `P2` = nice-to-have.
-- Mỗi task có ID dạng `W1-3` để báo cáo với GVHD.
-- "DoD" = Definition of Done (điều kiện được coi là hoàn thành).
+> **Cập nhật: 2026-11-15** · Trạng thái: **GR2 Tuần 2** · Lần sửa này viết lại toàn bộ lộ trình theo phản hồi của GVHD (Thầy Nguyễn Đức Tiến) trong buổi nộp báo cáo GR2 Tuần 1.
+>
+> **Thay đổi lớn so với lộ trình cũ:** trọng tâm chuyển từ *thư viện Arduino WiFi* sang **Electronic PC Agent** — một dịch vụ nền (Windows Service / Linux daemon) chạy 24/7 trên máy chủ, giám sát năng lượng PZEM-004T cho một tổ hợp máy chủ trong tủ rack. Phần ESP32 vẫn nằm trong **phạm vi GR2** nhưng bị **lùi xuống sau** (ưu tiên `P1`, làm sau khi Track A đạt DoD) theo chỉ đạo *"em có thì hoãn cái esp32 lại"* của thầy.
 
 ---
 
-## 1. Bảng tổng hợp ưu tiên
+## 0. Phản hồi của GVHD và cách đáp ứng
 
-| ID | Workstream | Ưu tiên | Phụ thuộc | Ước lượng | Trạng thái |
-| --- | --- | --- | --- | --- | --- |
-| **W0** | Chuẩn hoá repo & quy ước phát hành | P0 | — | 1–2 ngày | Chưa |
-| **W1** | Thư viện WiFi cấu hình — **bản lõi (Arduino)** | P0 | W0 | 6–8 ngày | ~50 % (có sample) |
-| **W2** | Cấu hình qua **WiFi Adhoc / Captive Portal** | P0 | W1 | 3–4 ngày | ~60 % (có sample) |
-| **W3** | Cấu hình qua **Serial** (thư viện riêng) | P1 | W1 | 3 ngày | ~30 % |
-| **W4** | **Duy trì kết nối** non-blocking (xoay SSID, tự phục hồi) | P0 | W1 | 3 ngày | ~40 % |
-| **W5** | **MAC spoofing** + ghi chú giới hạn | P1 | W1 | 1–2 ngày | ~70 % |
-| **W6** | **Phát hành** lên Arduino Library Registry | P0 | W1–W5 | 3–5 ngày | 0 % |
-| **W7** | (Tuỳ chọn) Phát hành **ESP Component Registry** / PlatformIO | P2 | W1–W5 | 3 ngày | 0 % |
-| **W8** | Firmware **đo dòng/áp/NTC** | P0 | W1 (dùng chung config) | 5–7 ngày | 0 % |
-| **W9** | Đo dòng **2 dạng mạch** + hiệu chuẩn | P1 | W8 | 4–5 ngày | 0 % |
-| **W10** | Phần cứng **EasyEDA** + khe cắm I2C | P0 | W8, W9 | 5–7 ngày | ~15 % (KiCad sơ bộ) |
-| **W11** | Tích hợp end-to-end + demo GR2/GR3 | P0 | tất cả | 3–4 ngày | — |
+| # | Thầy yêu cầu / nhận xét | Cách đáp ứng | Trạng thái |
+|---|---|---|---|
+| 1 | Coi PZEM-004T là một **tính năng**: cần **PC Agent** chạy trên máy tính | Xây dựng `pc_agent/` — package Python chuyên dụng cho PC Agent | **Đã có khung, đang hoàn thiện** |
+| 2 | Lý giải: PC Agent cài lên **máy chủ**, giám sát năng lượng **1 tổ hợp máy chủ trong tủ rack** | Mô hình hoá `site_id` → `rack_id` → `meter_id` trong cấu hình và trong bảng telemetry | **Đã có trong schema** |
+| 3 | Trên Windows: lập trình **service** chạy 24/24 **không cần đăng nhập**; trên Linux dùng **daemon/service** | `pc_agent/src/pc_agent/deploy/windows_service.py` (pywin32) + `pc_agent/deploy/smart-power-agent.service` (systemd) | **Đã có, chưa test trên máy thật** |
+| 4 | Service **không có giao diện**, phải **tự detect cổng COM**, **gửi thử lệnh** xem cổng trả lời đúng không | `discovery.py`: 4 bậc dò, xác minh frame + CRC + giá trị điện lưới hợp lý | **Đã có** |
+| 5 | **Tự lưu cổng COM đúng** để lần sau khỏi mất thời gian | Anti-Flapping Cache trong `%ProgramData%\SmartPowerOutlet\config.json` | **Đã có** |
+| 6 | "Các tiến trình máy chủ phải viết service, **không có chuyện phải bấm Enter mới chạy**" | Cơ chế SCM auto-start (delayed) + `FailureActions` tự khởi động lại 5s/10s/30s | **Đã có** |
+| 7 | Thiếu **mô hình tổng quát** — thầy cần hình dung 3 thành phần | Mô hình 3 thành phần (mục 1) + `docs/architecture/ARCHITECTURE.md` | **Đã có** |
+| 8 | "**Serial là hạ tầng vật lý, Modbus chỉ là giao thức**" | Tách rõ 2 tầng trong `drivers/pzem004t.py` (transport serial ↔ frame Modbus) | **Đã có** |
+| 9 | "**Hoãn cái ESP32 lại**" | Track B (ESP32) **vẫn thuộc phạm vi GR2** nhưng **lùi xuống sau Track A** — ưu tiên `P1`, không phải việc gấp | **Đã sắp lại thứ tự, vẫn nằm trong GR2** |
+| 10 | "Các sự cố phát hiện được và ghi lại là rất tốt" | Bảng `events` + `RuleEngine` ghi cảnh báo quá tải / quá áp / sụt áp / offline | **Đã có** |
 
-**Thứ tự thực thi đề xuất**
+**Quy ước ưu tiên:** `P0` = chặn tiến độ, phải xong trong GR2 · `P1` = vẫn làm trong GR2 nhưng làm **sau** các việc `P0` · `P2` = nice-to-have, làm nếu còn thời gian.
+**DoD** = Definition of Done. ID task dạng `A-3` để đối chiếu khi báo cáo GVHD.
+
+---
+
+## 1. Mô hình hệ thống — 3 thành phần
 
 ```
-W0 → W1 → (W2 ∥ W4) → W3 → W5 → W6 → W7
-                     ↘ W8 → W9 → W10 → W11
+                    ┌──────────────────────────────────────────────┐
+                    │  MÁY CHỦ GIÁM SÁT TRONG TỦ RACK             │
+                    │  (Windows Server hoặc Linux host)            │
+                    │                                              │
+                    │  ┌────────────────────────────────────────┐  │
+                    │  │ 1. ELECTRONIC PC AGENT                │  │
+                    │  │    Windows Service / systemd daemon    │  │
+                    │  │    chạy 24/7, headless, không GUI     │  │
+                    │  │    Modbus-RTU + COM auto-discovery     │  │
+                    │  │    + SQLite WAL + REST API             │  │
+                    │  └───────────────┬────────────────────────┘  │
+                    └──────────────────┼───────────────────────────┘
+                                       │ USB-TTL, Modbus-RTU 9600 8N1
+                                       ▼
+                            ┌─────────────────────┐
+                            │  PZEM-004T V3.0     │
+                            │  đo 1 pha 220 V AC  │
+                            └─────────────────────┘
+
+   ┌───────────────────┐   MQTT / REST   ┌──────────────────────────┐
+   │ 3. WEB SERVER     │◄────────────────┤ 1. ELECTRONIC PC AGENT   │
+   │  giao diện + API  │                 └────────────┬─────────────┘
+   └───────────────────┘                              │ MQTT
+                                                     ▼
+                                        ┌────────────────────────────┐
+                                        │ 2. CENTRAL IOT CONTROLLER │
+                                        │    ESP32 / ESP32-P4        │
+                                        │    (P1 — LÀM SAU TRACK A)  │
+                                        │    WiFi provisioning,      │
+                                        │    điều khiển relay         │
+                                        └─────────────┬──────────────┘
+                                                      ▼
+                                             ┌────────────────┐
+                                             │  RELAY Ổ CẮM   │
+                                             └────────────────┘
 ```
 
-Lý do: W1 là "hợp đồng" dữ liệu/API mà mọi thứ khác (portal, serial, đo điện, app) đều phụ thuộc. W6 (publish) chỉ nên làm **sau** khi API chốt, vì registry gắn cứng URL repo và version.
+| # | Thành phần | Chạy trên | Trách nhiệm | Giao tiếp | Trạng thái |
+|---|---|---|---|---|---|
+| **1** | **Electronic PC Agent** | Máy chủ giám sát trong tủ rack | Đọc PZEM-004T liên tục, tự dò COM, lưu trữ time-series, đánh giá ngưỡng, phục vụ API nội bộ | **Nhận:** Modbus-RTU qua USB-TTL · **Cung cấp:** REST API `127.0.0.1:8000` · **Gửi (sau):** MQTT | **P0 — đang làm** |
+| **2** | **Central IoT Controller** | Vi điều khiển ESP32 / ESP32-P4 | Cấu hình & duy trì WiFi, subscriber MQTT, điều khiển relay, giám sát an toàn | Nhận MQTT qua WiFi · Điều khiển GPIO relay | **P1 — làm sau Track A, vẫn trong GR2** |
+| **3** | **Web Server** | Máy chủ web trung tâm | Giao diện web + API người dùng, báo cáo, lịch sử sự kiện | Nhận REST/MQTT từ PC Agent — **không** cắm serial trực tiếp | **P1 — đang dựng dần** |
+
+> **Vì sao Web Server không cắm serial trực tiếp?** Windows cho phép **chỉ một** tiến trình giữ cổng COM tại một thời điểm (tiến trình thứ hai nhận `Access is denied`). PC Agent là tiến trình duy nhất sống 24/7 và giữ phiên serial. Nếu Web Server mở cùng cổng, giám sát sẽ bị gián đoạn. Vì vậy ranh giới bắt buộc là: **PC Agent = tầng thiết bị (edge)**, **Web Server = tầng trình diễn (application)**.
+
+Tài liệu chi tiết + sơ đồ: [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md).
 
 ---
 
-## 2. W0 — Chuẩn hoá repo & quy ước phát hành  `P0`
+## 2. Track A — Electronic PC Agent  `P0` *(đang làm, ưu tiên tuyệt đối)*
 
-Chưa có bước này thì `arduino-lint --compliance strict` sẽ fail ngay.
+Thư mục: `pc_agent/`. Đây là sản phẩm chính của GR2.
 
-- [ ] **W0-1** Tách thư viện ra **repo riêng** (ví dụ `SmartOutlet_WiFiConf`), không nhúng trong `Smart_Power_Outlet`.
-      Lý do: registry yêu cầu repo public hợp lệ, đổi URL sau khi publish là gần như không được.
-- [ ] **W0-2** Cấu trúc chuẩn Arduino 1.5:
-      ```
-      /library.properties
-      /keywords.txt
-      /LICENSE              (MIT)
-      /README.md
-      /src/                 *.h + *.cpp (phẳng, không lồng sâu)
-      /examples/<Tên>/<Tên>.ino
-      /extras/              (sơ đồ, ảnh, datasheet)
-      ```
-- [ ] **W0-3** `.gitignore` chặn: `.pio/`, `.vscode/`, `logs/`, `secrets.h`, `build/`, `*.kicad_prl`.
-- [ ] **W0-4** CI GitHub Actions:
-      - `arduino-lint --compliance strict --library-manager submit`
-      - ma trận compile: `arduino-cli compile -b esp32:esp32:esp32` + `esp8266:esp8266:nodemcuv2` (+ `esp32c3`, `esp32p4` nếu core hỗ trợ)
-- [ ] **W0-5** Quy ước version: **SemVer**. Tag git **phải trùng** `version=` trong `library.properties`.
-- [ ] **W0-6** Chốt tên thư viện (duy nhất, không trùng registry) — gợi ý: `WiFiConf`, `SOICT_WiFiConf`.
+### 2.1 A-1 — Đóng gói & cấu trúc project  `P0` ✅ *gần xong*
 
-**DoD:** repo mới public, CI xanh, `arduino-lint` strict pass, có tag `v4.0.0` (hoặc bản beta `-beta`).
+- [x] **A-1-1** Chuẩn `src/` layout: `pc_agent/src/pc_agent/` + `pyproject.toml` (PEP 621).
+- [x] **A-1-2** Tách `drivers/` (Modbus) · `core/` (poller, rules, state) · `storage/` (SQLite) · `api/` (HTTP) · `deploy/` (service wrappers) · `tools/` (probe).
+- [x] **A-1-3** Entry point `python -m pc_agent` (foreground) — **không fork mã nguồn** so với chế độ service.
+- [x] **A-1-4** Phụ thuộc cốt lõi chỉ `pyserial`; `pywin32` là optional (`[service]`); `paho-mqtt` là optional (`[mqtt]`).
+- [x] **A-1-5** `web/index.html` là dashboard tĩnh, đóng gói bằng `package-data`.
 
----
+**DoD:** `pip install -e pc_agent` chạy được; `pc-agent --help` in ra usage.
 
-## 3. W1 — Thư viện lõi: lưu trữ cấu hình bền vững  `P0`
+### 2.2 A-2 — Modbus-RTU Engine  `P0` ✅ *đã hiện thực & kiểm chứng*
 
-Đây là phần "trái tim": **một data object duy nhất** lưu trong flash, dùng chung cho cả WiFi và module đo điện.
+- [x] **A-2-1** CRC-16 Modbus (poly phản chiếu `0xA001`, init `0xFFFF`, **byte thấp gửi trước**).
+- [x] **A-2-2** Frame đọc: `01 04 00 00 00 0A 70 0D` → đối chiếu **khớp chính xác** với frame mẫu trong `PZEM-004T_Huong_Dan_Giao_Thuc.docx`.
+- [x] **A-2-3** Giải mã 20 byte → 10 đại lượng (U, I, P, W, f, PF, alarm).
+- [x] **A-2-4** Xử lý **sentinel `0xFFFF`** (chưa có tải) → hiển thị `0`, không hiện số rác.
+- [x] **A-2-5** Ghép 32-bit đúng thứ tự: thanh ghi **thấp trước, cao sau** (`0x0001` = 16 bit thấp, `0x0002` = 16 bit cao) → `value = (high << 16) | low`. Đối chiếu bằng frame mẫu trong `PZEM-004T_Huong_Dan_Giao_Thuc.docx`.
+- [x] **A-2-6** Test tự động `pc_agent/tests/test_decode.py` — 4 ca (CRC tài liệu / frame mẫu / giá trị thực tế / no-load).
 
-### 3.1 Schema cấu hình (chốt sớm, có version + CRC)
+**DoD:** toàn bộ test decode pass; giá trị đo thực tế khớp ampe kìm trong ±2 %.
 
-```json
-{
-  "v": 2,
-  "net": [
-    {"s": "Home_WiFi", "p": "88888888"},
-    {"s": "HUST_B1",   "p": ""},
-    {"s": "SOICT_LAB","p": "12345678"}
-  ],
-  "ok": "HUST_B1",
-  "mac": "24:24:B7:D0:B6:1C",
-  "dev_id": "mydevice",
-  "wifi_en": true,
-  "meas": { "shunt_mohm": 10, "v_div": 5.0, "ntc_beta": 3950 }
-}
-```
+### 2.3 A-3 — COM Auto-Discovery & Anti-Flapping Cache  `P0` ✅ *đã hiện thực*
 
-| Field | Ý nghĩa | Ghi chú |
-| --- | --- | --- |
-| `net[5]` | Tối đa **5 cặp SSID/password** (bắt buộc theo yêu cầu) | Cho phép `p=""` (mạng mở, ví dụ `HUST_B1`) |
-| `ok` | SSID **gần nhất thành công** | Khi kết nối: **thử `ok` trước**, thất bại mới thử mạng liền sau |
-| `mac` | MAC dùng để spoof | Bỏ trống → dùng MAC gốc |
-| `dev_id` | ID thiết bị do người dùng đặt | Dùng cho MQTT client-id, topic |
-| `wifi_en` | Bật/tắt WiFi | `false` → tắt radio, tiết kiệm pin |
-| `meas` | Hệ số hiệu chuẩn đo điện | Thêm mới — tận dụng luôn store này cho W8 |
+Đây là yêu cầu trực tiếp của thầy (mục 4 & 5 ở bảng phản hồi).
 
-- [ ] **W1-1** `ConfigManager` (hoặc `OutletConfig`) thao tác trên struct `PersistentParams`, **không** để người dùng đụng JSON thô.
-- [ ] **W1-2** Ghi **atomic**: ghi file tạm → `rename` → tránh mất cấu hình khi mất điện giữa lúc `save()`.
-- [ ] **W1-3** Có `version` + `CRC32`; nâng cấp schema tự động (`migrate()`), nếu CRC sai → dùng default + cảnh báo.
-- [ ] **W1-4** Giới hạn ghi: chỉ `commit()` khi dirty, tránh mài mòn flash (đặc biệt khi rotate SSID mỗi 60 s — **không** được ghi `ok` mỗi lần thử).
-- [ ] **W1-5** Backend lưu trữ:
-      - ESP32/ESP32-C3/C6/P4: `Preferences` (NVS) hoặc `LittleFS` JSON
-      - ESP8266: `LittleFS` (khuyến nghị) hoặc EEPROM giả lập
-      - Bọc sau interface `IConfigStore` để test trên host.
-- [ ] **W1-6** API công khai tối giản:
-      ```cpp
-      bool  begin();
-      bool  load();  bool save();
-      void  setWifiEnabled(bool);
-      void  setDeviceId(const char*);
-      void  setMac(const char*);            // "AA:BB:CC:DD:EE:FF", "" = bỏ spoof
-      bool  upsertNetwork(const char* ssid, const char* pass);
-      void  setLastOkSsid(const char*);
-      ```
-- [ ] **W1-7** Unit test trên host (PlatformIO `env:native`) cho: parse/serialize, migrate v1→v2, CRC sai, danh sách đầy 5 phần tử.
+- [x] **A-3-1** **Bậc 1 — Fast path:** thử cổng đã nhớ + địa chỉ đã nhớ. Không quét → khởi động nhanh.
+- [x] **A-3-2** **Bậc 2 — Ưu tiên theo topology:** nếu adapter không có serial number (CH340 không có), Windows đổi số COM khi cắm cổng khác → dùng `location` (`1-4:x.3`) để khớp lại.
+- [x] **A-3-3** **Bậc 3 — Quét cổng ứng viên:** xếp hạng theo VID/PID (CH340 / CP210x / FTDI / PL2303 tier 1; USB chung tier 2; legacy tier 3); thử địa chỉ `0x01` → `0xF8` → địa chỉ đã nhớ.
+- [x] **A-3-4** **Bậc 4 — Quét toàn bộ:** `0x01..0xF7` (chỉ khi `--exhaustive-scan`).
+- [x] **A-3-5** **Xác minh 5 bậc trước khi công nhận:** đúng function code `0x04` → đúng byte count → **CRC hợp lệ** → **điện áp 80–260 V** → **tần số 45–65 Hz**.
+- [x] **A-3-6** **Anti-Flapping:** chỉ ghi đè cấu hình khi đã **xác minh được thiết bị thật**. Cổng hỏng / bị chiếm / chưa có nguồn AC → **không** xoá cấu hình đã nhớ.
+- [x] **A-3-7** Ghi cấu hình **nguyên tử** (ghi file tạm → `fsync` → `os.replace`) — không mất cấu hình khi mất điện giữa lúc ghi.
+- [x] **A-3-8** Phân loại lỗi rõ ràng: `PORT_BUSY` (tiến trình khác giữ cổng) vs `PORT_MISSING` (thiết bị bị rút) vs `IO_ERROR` — **không** nhầm lỗi dây/nguồn.
+- [x] **A-3-9** Nhắc nhở nguyên nhân hay gặp: PZEM **không phản hồi UART nếu chưa có nguồn lưới AC** ở chân L/N.
 
-**DoD:** reboot 100 lần liên tiếp không mất cấu hình; test native pass; schema có tài liệu trong README.
+**DoD:** rút/cắm lại USB-TTL, đổi cổng USB → agent tự tìm lại đúng thiết bị mà không cần sửa tay; cấu hình file không bao giờ bị ghi đè bằng giá trị rác.
 
----
+### 2.4 A-4 — Windows Service (SCM)  `P0` 🔶 *code xong, cần test trên máy thật*
 
-## 4. W2 — Cấu hình qua WiFi Adhoc / Captive Portal  `P0`
+- [x] **A-4-1** `SmartPowerOutletAgentService` (pywin32 `ServiceFramework`) với `_svc_name_`, `_svc_display_name_`, `_svc_description_`.
+- [x] **A-4-2** **Không dùng `pythonservice.exe`** — nó link cứng `pythonXY.dll` của Python gốc và **không** đọc `pyvenv.cfg` → service chạy sai Python, mất `pyserial`. Thay bằng: `python.exe` của venv làm host trực tiếp (`ImagePath = venv\Scripts\python.exe "...\windows_service.py"`).
+- [x] **A-4-3** Vòng đời SCM: `Initialize()` → `PrepareToHostSingle(cls)` → `StartServiceCtrlDispatcher()` → `SvcDoRun()` → `SvcStop()`.
+- [x] **A-4-4** **Logging an toàn Session 0:** luôn ghi file xoay vòng (`RotatingFileHandler` 10 MB × 10); chỉ gắn handler console khi stdout thực sự dùng được.
+- [x] **A-4-5** **Auto-start trễ** (`SERVICE_DELAYED_AUTO_START_INFO`) — không tranh chấp I/O lúc boot.
+- [x] **A-4-6** **Crash recovery:** `sc.exe failure ... restart/5000/restart/10000/restart/30000`, `reset= 86400`, `failureflag 1`.
+- [x] **A-4-7** Script `deploy/install_service.ps1` (tạo venv, copy package, ghi config ban đầu, đăng ký, cấu hình recovery, mở firewall nếu bind ngoài localhost) và `deploy/uninstall_service.ps1`.
+- [ ] **A-4-8** ⚠️ **Test trên máy thật:** cài → reboot → service tự lên → đọc dữ liệu → kill tiến trình → SCM tự khởi động lại. **Chưa làm.**
+- [ ] **A-4-9** ⚠️ **Xác minh quyền đọc cổng COM khi chạy dưới LocalSystem** (Session 0). **Chưa làm.**
+- [ ] **A-4-10** ⚠️ Viết **sự cố đã biết** vào `docs/operations/TROUBLESHOOTING.md`: cổng bị chiếm, thiết bị bị rút, chưa có nguồn AC, đổi số COM.
 
-- [ ] **W2-1** Phát AP: SSID mặc định `WIFI_ADHOC` (đổi được qua tham số `setup(adhoc_ssid, pass)`), **mặc định nên có password** (hiện đang `""` — rủi ro).
-- [ ] **W2-2** Captive portal DNS: mọi request → `192.168.4.1` (ESP32: `DNSServer`, ESP8266: `DNSServer` của core).
-- [ ] **W2-3** Web UI (LittleFS): trang chủ (danh sách 5 SSID, chọn mạng "ok"), trang scan, trang nhập `dev_id` / `mac` / `wifi_en`, nút Reboot.
-- [ ] **W2-4** REST API dùng chung cho app Flutter: `GET /api/scan`, `GET/POST /api/config`, `POST /api/reboot`, `GET /api/status`.
-- [ ] **W2-5** **Non-blocking**: `portal.loop()` gọi từ `loop()` chính. Hiện sample gọi `myWiFi->setup()` lặp lại trong `loop()` → tạo AP nhiều lần, phải sửa.
-- [ ] **W2-6** Timeout an toàn: tự thoát portal + reboot sau **5 phút** (đã có `ADHOC_STATION_DURATION`) để không kẹt AP khi mất điện.
-- [ ] **W2-7** Bảo vệ: giới hạn 1 client đồng thời, chống POST rỗng, validate MAC regex.
+**DoD:** sau khi cài, `sc query SmartPowerOutletAgent` = `RUNNING` ngay sau reboot mà **không ai phải đăng nhập**; API trả `{"status":"healthy"}`.
 
-**DoD:** điện thoại vào AP → nhập 5 mạng + dev_id + mac → reboot → kết nối đúng mạng `ok`. Không block `loop()`.
+### 2.5 A-5 — Linux systemd daemon  `P0` 🔶 *unit file xong, chưa test*
 
----
+- [x] **A-5-1** `deploy/smart-power-agent.service`: `Type=simple`, `Restart=always`, `RestartSec=10`.
+- [x] **A-5-2** `ConfigurationDirectory=` / `StateDirectory=` / `LogsDirectory=` (đường dẫn XDG tương ứng).
+- [x] **A-5-3** `DeviceAllow=/dev/ttyUSB0 rw` + hardening (`NoNewPrivileges`, `ProtectSystem`, `PrivateTmp`).
+- [ ] **A-5-4** ⚠️ Test trên máy Linux (VM hoặc Raspberry Pi): `systemctl enable --now`, `journalctl -u`.
+- [ ] **A-5-5** ⚠️ Script cài đặt systemd (`install_linux.sh`) + tài liệu tương ứng.
 
-## 5. W4 — Duy trì kết nối non-blocking  `P0`
+**DoD:** `systemctl is-enabled` = `enabled`; agent tự lên sau reboot.
 
-Hàm mục tiêu:
+### 2.6 A-6 — Lưu trữ time-series (SQLite WAL)  `P0` ✅ *đã hiện thực*
 
-```cpp
-bool WiFiManager::checkAndEstablishWiFiConnection(
-        unsigned long reconnect_interval,
-        unsigned int  ssid_interval);
-```
+- [x] **A-6-1** Bảng `telemetry_raw` (mẫu thô 1 Hz, giữ **14 ngày**) — index `(meter_id, timestamp DESC)`.
+- [x] **A-6-2** Bảng `telemetry_hourly` (tổng hợp theo giờ, giữ **365 ngày**): min/max/avg U, I, P, PF, chênh lệch điện năng, **load factor**, số lần alarm.
+- [x] **A-6-3** Bảng `events` (cảnh báo / sự cố) với `resolved_at` để biết sự kiện nào đang mở.
+- [x] **A-6-4** Chế độ **WAL** + `synchronous=NORMAL` → đọc được đồng thời khi đang ghi.
+- [x] **A-6-5** Tổng hợp theo giờ chạy mỗi 5 phút; dọn dữ liệu cũ mỗi giờ.
+- [ ] **A-6-6** ⚠️ Test: chạy 24 h liên tục, không rò rỉ disk, kích thước DB ổn định.
 
-### 5.1 Vấn đề của code sample hiện tại (đã đọc `WiFiConf/src/WiFiManager.cpp`)
+**DoD:** DB 1 file, tự dọn theo retention, đọc/ghi song song không lỗi.
 
-| # | Vấn đề | Hệ quả |
-| --- | --- | --- |
-| 1 | `WiFi.begin()` gọi lại mỗi tick throttle, không có state `CONNECTING` | Reset liên tục, **không bao giờ** kết nối được |
-| 2 | Ngay sau `WiFi.begin()` lại `if (WiFi.status() == WL_CONNECTED)` | `true` gần như không bao giờ xảy ra → nhánh cập nhật `ok` là **dead code** |
-| 3 | Không có timeout cho 1 lần thử | Kẹt ở 1 SSID vô hạn |
-| 4 | `ssid_interval == 0` → chỉ thử đúng `ok`, không fallback | Không đáp ứng "thử mạng liền sau" |
-| 5 | Đếm `attemptsOnCurrentSsid` theo số tick, không theo thời gian | Hành vi phụ thuộc `reconnect_interval` |
-| 6 | Xoá/tắt WiFi bằng `WiFi.disconnect()` + `wifiStatus=false` nhưng không `mode(WIFI_OFF)` | Vẫn ăn dòng |
+### 2.7 A-7 — Rule Engine & ghi nhận sự cố  `P0` ✅ *đã hiện thực*
 
-### 5.2 Thiết kế lại: state machine
+Thầy nói rõ: *"Các sự cố phát hiện được và ghi lại là rất tốt."* → đây là điểm cần làm kỹ.
 
-```
-OFF ──(wifi_en=true)──► IDLE ──tick──► CONNECTING(idx, deadline)
- ▲                        ▲                     │
- │                        │        timeout / CONNECT_FAILED
- │                   rotate idx ◄───────────────┘
- │                        │
- │                   (hết 1 vòng 5 mạng, N lần)
- │                        ▼
- └──────────────────── PORTAL (W2)  hoặc backoff luỹ thừa
-CONNECTED ──(LOST)──► IDLE
-```
+- [x] **A-7-1** Ngưỡng trong tiến trình: `OVER_POWER`, `OVER_VOLTAGE`, `UNDER_VOLTAGE`, `DEVICE_ALARM` (cảnh báo tích hợp của PZEM, thanh ghi `0x0009 = 0xFFFF`).
+- [x] **A-7-2** `DEVICE_OFFLINE` khi mất kết nối.
+- [x] **A-7-3** **Tự đóng sự kiện** khi trở lại bình thường (`resolved_at`) — không spam log.
+- [x] **A-7-4** Đánh giá **trong tiến trình**, không đẩy lên broker: độ trễ < 1 ms, và cảnh báo vẫn kêu được khi mất mạng (đúng tình huống máy chủ rack).
+- [ ] **A-7-5** ⚠️ **Test ngưỡng thực tế:** dùng bóng đèn/tải biến thiên vượt ngưỡng → xác nhận sự kiện ghi vào DB và hiện trên API.
+- [ ] **A-7-6** ⚠️ Thêm ngưỡng **quá dòng** và **sụt áp nghiêm ngặt hơn** theo thông số thực tế của tủ rack.
+- [ ] **A-7-7** ⚠️ Gửi **thông báo tổng hợp** (email/Telegram webhook) khi có sự kiện mức `critical`.
 
-- [ ] **W4-1** Enum `State { OFF, IDLE, CONNECTING, CONNECTED, PORTAL }` + `loop()` xử lý, **tuyệt đối không `delay()`**.
-- [ ] **W4-2** Timeout/lần thử cấu hình được (mặc định 15 s), `ssid_interval` = **số lần thử trên 1 SSID** (chốt ngữ nghĩa với GVHD, hiện đang mơ hồ).
-- [ ] **W4-3** Thứ tự thử: `ok` trước → vòng các mạng còn lại.
-- [ ] **W4-4** Khi kết nối thành công: cập nhật `ok` **một lần** rồi mới commit flash.
-- [ ] **W4-5** Exponential backoff khi hết 1 vòng (15 s → 30 s → 60 s → 120 s, trần 5 phút).
-- [ ] **W4-6** Callback: `onConnected(IP)`, `onDisconnected()`, `onPortalStarted()`, `onConfigChanged()`.
-- [ ] **W4-7** Kiểm tra "internet thật" (DNS probe) — **tách khỏi** "đã vào WiFi", trả 2 trạng thái riêng.
-- [ ] **W4-8** `shutdownWiFi()` → `WiFi.mode(WIFI_OFF)` (+ `forceSleepBegin()` trên ESP8266); `wakeupWiFi()` khôi phục STA.
-- [ ] **W4-9** "Tự khởi động lại nếu chết": watchdog mềm — nếu `CONNECTED` nhưng 3 lần DNS probe fail liên tiếp → reconnect; nếu 5 lần reconnect thất bại → **restart** (có đếm trong RTC/NVS để tránh loop restart vô hạn: quá 5 restart/giờ → vào portal).
+**DoD:** mỗi loại sự cố đều sinh đúng 1 bản ghi `events`, tự đóng khi hết, và xuất hiện trong `/api/events`.
 
-**DoD:** test kịch bản (a) mất điện router 5 phút → tự vào lại; (b) đổi vị trí sang mạng thứ 2 → xoay vòng và vào được; (c) `wifi_en=false` → dòng tiêu thụ giảm rõ rệt; (d) 2 giờ chạy liên tục không rò rỉ heap.
+### 2.8 A-8 — REST API & dashboard  `P0` ✅ *đã hiện thực*
+
+- [x] **A-8-1** `http.server` chuẩn Python — **không framework** (bề mặt tấn công nhỏ cho service 24/7).
+- [x] **A-8-2** Endpoint: `/`, `/api/health`, `/api/status`, `/api/metrics`, `/api/history`, `/api/events`, `/api/config`.
+- [x] **A-8-3** Mặc định bind `127.0.0.1`; mở ra LAN là **tuy chọn có chủ đích** (`--host 0.0.0.0` + firewall rule).
+- [x] **A-8-4** Bearer token tùy chọn (`api_token`) — hiện chưa bật mặc định.
+- [x] **A-8-5** Dashboard tĩnh `web/index.html` — hiện số đo trực tiếp, trạng thái kết nối, sự kiện.
+- [ ] **A-8-6** ⚠️ **Bật xác thực mặc định** khi bind ngoài localhost (bắt buộc — hiện là tuỳ chọn).
+- [ ] **A-8-7** ⚠️ Biểu đồ lịch sử (24 h / 7 ngày / 30 ngày) — dùng `/api/history` với `resolution=raw|hourly`.
+
+**DoD:** dashboard mở được từ máy khác trong LAN; `/api/health` trả `healthy` trong < 50 ms.
+
+### 2.9 A-9 — Bền vững vận hành (Production hardening)  `P1`
+
+- [ ] **A-9-1** Health check + watchdog: agent im lặng > 3 chu kỳ → ghi sự kiện `DEVICE_OFFLINE`.
+- [ ] **A-9-2** Giới hạn tốc độ log khi lỗi lặp (tránh làm đầy ổ đĩa khi cổng hỏng).
+- [ ] **A-9-3** **Version stamping**: `/api/health` trả version của package + git commit.
+- [ ] **A-9-4** **Backup** cấu hình + DB (`%ProgramData%\SmartPowerOutlet`), lịch tự động.
+- [ ] **A-9-5** Test **rút/cắm USB-TTL giữa lúc đang chạy**: agent phải tự ghi `DEVICE_OFFLINE`, thử lại sau 5 s, và **tự kết nối lại** khi cắm lại.
+- [ ] **A-9-6** Test **cổng bị chiếm** bởi PuTTY/PlatformIO: agent phải báo đúng `PORT_BUSY` (không phải lỗi nguồn).
+
+**DoD:** agent chạy 7×24 không cần can thiệp tay.
+
+### 2.10 A-10 — MQTT uplink  `P1` *(nối Track B & C)*
+
+- [ ] **A-10-1** Client `paho-mqtt` (optional dependency `[mqtt]`), mặc định **tắt**.
+- [ ] **A-10-2** Topic `smartoutlet/rack/<rack_id>/meter/<meter_id>` + sub-topic `telemetry` / `state` / `event`.
+- [ ] **A-10-3** Publish trạng thái **kết nối** lên broker (`online`/`offline` retained) — để Web Server biết agent còn sống.
+- [ ] **A-10-4** Reconnect tự động với backoff luỹ thừa; agent **không** chết vì broker chết.
+- [ ] **A-10-5** QoS 1, `clean_session=False`, keepalive 60 s.
+
+**DoD:** broker mất rồi có lại → agent tự kết nối lại và tiếp tục ghi dữ liệu.
 
 ---
 
-## 6. W3 — Thư viện cấu hình qua **Serial**  `P1`
+## 3. Track B — Central IoT Controller (ESP32)  `P1` *(làm sau Track A, **vẫn trong phạm vi GR2**)*
 
-Yêu cầu: *"Thư viện tương tự như (1) nhưng qua đường serial"*. Hai hướng — cần chốt với GVHD:
+> **Thầy đã yêu cầu hoãn:** *"em có thì hoãn cái esp32 lại"*. → Track B **không bị đẩy sang GR3**; nó vẫn là một phần của GR2, chỉ **lùi xuống sau** Track A (ưu tiên `P1`) cho tới khi PC Agent đạt DoD.
+> Việc cần giữ lại từ lộ trình cũ (để không mất hiểu biết): thư viện WiFi provisioning, state machine duy trì kết nối, đo điện trên vi điều khiển, phần cứng EasyEDA.
+> **Điều kiện mở:** Track A (A-1 → A-9) đạt DoD → GVHD duyệt → làm Track B trong **cùng GR2**. Nếu hết thời gian GR2 thì phần dở dang đó mới chuyển sang đầu GR3 (xem mục 7 — rủi ro thời gian).
 
-| Hướng | Mô tả | Ưu/nhược |
-| --- | --- | --- |
-| **A. Cùng thư viện, thêm transport** | `WifiConf` có `setTransport(Serial/USB)`, dùng chung `ConfigManager` | Ít trùng lặp, publish 1 lần |
-| **B. Thư viện riêng `WiFiConfSerial`** | Repo/library riêng, chỉ phụ thuộc `WiFiConf` | Đúng câu chữ "thư viện tương tự", nhưng 2 lần publish |
+### 3.1 B-1 — Thư viện WiFi provisioning (Arduino)  `P1` *giữ nguyên thiết kế cũ*
 
-Khuyến nghị **A** (thêm `#include <WiFiConfSerial.h>` như module mở rộng, vẫn có `library.properties` riêng nếu cần).
+- [ ] **B-1-1** `ConfigManager` trên NVS/LittleFS: schema có `version` + CRC, ghi atomic, chỉ commit khi dirty.
+- [ ] **B-1-2** Tối đa 5 SSID + mật khẩu; nhớ SSID "ok" gần nhất; thử `ok` trước rồi mới xoay vòng.
+- [ ] **B-1-3** Captive portal (AP + DNS) cho cấu hình qua điện thoại; timeout 5 phút rồi thoát.
+- [ ] **B-1-4** State machine `OFF/IDLE/CONNECTING/CONNECTED/PORTAL` — tuyệt đối không `delay()`.
+- [ ] **B-1-5** Phát hành lên Arduino Library Registry (`arduino-lint --compliance strict`).
 
-- [ ] **W3-1** Giao thức **line-based, non-blocking**, timeout 10 s/lệnh:
-      ```
-      net.add=<ssid>,<pass>      net.ok=<ssid>      net.list
-      net.del=<ssid>             dev.id=<name>      mac=<AA:BB:..|off>
-      wifi.en=<0|1>              show               save
-      reset                      reboot             help
-      ```
-- [ ] **W3-2** Hỗ trợ thêm `--json` mode (`{"cmd":"net.add","ssid":"..","pass":".."}`) để app desktop gửi.
-- [ ] **W3-3** Không echo password ra serial; che dạng `****`.
-- [ ] **W3-4** Parser chịu lỗi: dòng quá dài, ký tự rác, `\r\n` vs `\n`, escape dấu phẩy trong password.
-- [ ] **W3-5** Hàm blocking cũ (`EnrollBySerial()` đang chặn luồng) → thay bằng `serial.poll()` không chặn, hoặc giữ blocking nhưng có timeout thoát tự động.
-- [ ] **W3-6** Example `RegisterBySerial.ino` + script Python mẫu (`tools/enroll.py`) để cấu hình hàng loạt.
-- [ ] **W3-7** Ghi tài liệu **bảng lệnh** trong README (đây là thứ app Flutter sẽ dùng).
+### 3.2 B-2 — Firmware đo điện & điều khiển relay  `P1`
 
-**DoD:** cấu hình 5 mạng + `dev_id` + `mac` qua serial trong < 30 s; script Python chạy được; không block quá 10 s.
+- [ ] **B-2-1** `PowerMonitor` (API độc lập phần cứng): RMS, công suất, PF, điện năng, NTC.
+- [ ] **B-2-2** Task FreeRTOS riêng cho sampling; publish qua queue.
+- [ ] **B-2-3** MQTT client (`smartoutlet/<dev_id>/...`), điều khiển relay, cắt relay khi quá nhiệt/quá tải.
 
----
+### 3.3 B-3 — Phần cứng EasyEDA  `P2`
 
-## 7. W5 — MAC spoofing  `P1`
-
-- [ ] **W5-1** API: `setNewMac(const char*)` — validate `XX:XX:XX:XX:XX:XX` (**hiện chỉ hỗ trợ dấu `:`**, cần nhận cả `-` và dạng liền `AABBCCDDEEFF`).
-- [ ] **W5-2** Thứ tự bắt buộc: `WiFi.mode(WIFI_STA)` → `esp_wifi_set_mac(WIFI_IF_STA, mac)` / `wifi_set_macaddr(STATION_IF, mac)` → **rồi mới** `WiFi.begin()`.
-- [ ] **W5-3** Kiểm tra mã trả về, log rõ ràng khi fail; **fallback** dùng MAC gốc, không treo.
-- [ ] **W5-4** Đọc MAC gốc 1 lần (`WiFi.macAddress()` trước khi đổi) và lưu lại để có thể "khôi phục".
-- [ ] **W5-5** OUI: byte đầu **phải chẵn** (unicast) và **không** đặt bit local-admin tuỳ tiện; cấm `FF:FF:FF:...`, cấm trùng MAC của AP.
-- [ ] **W5-6** **Ghi chú giới hạn vào README** (quan trọng, GVHD đã nêu):
-      > MAC thực chất **không đổi** trong phần cứng. Ta chỉ ghi đè **biến/tham số MAC** mà driver WiFi dùng để dựng frame và khai báo trong quá trình association — tức là đánh lừa hệ thống quản lý mạng ở tầng phần mềm.
-      > **Ngoại lệ: Windows và card mạng Intel cấm ghi đè MAC** (driver/vendor lock) — nên kịch bản "đổi MAC của máy tính để vượt chặn" **không** khả thi trên các nền tảng này.
-      > Bối cảnh: `HUST_B1` có thể chặn theo MAC → thư viện cho phép mỗi board tự mang một MAC riêng.
-- [ ] **W5-7** Cảnh báo pháp lý/đạo đức ngắn trong README: chỉ dùng cho thiết bị của mình / lab được phép.
-
-**DoD:** router/AP thấy MAC mới; khôi phục MAC gốc được; MAC sai định dạng không làm board treo.
+- [ ] **B-3-1** Schematic EasyEDA (nguồn 220 VAC → HLK-PM01 → LDO 3V3; relay + driver; ESP32-C3; nút BOOT/RESET).
+- [ ] **B-3-2** Khe cắm **I2C** đánh dấu rõ trên silkscreen: `3V3 / GND / SDA / SCL`, có nhãn "I2C", pull-up 4.7 kΩ.
+- [ ] **B-3-3** Khoảng cách creepage/clearance ≥ 3 mm giữa phần cao áp và phần logic; test point cho 3V3/GND/SDA/SCL.
+- [ ] **B-3-4** BOM + Gerber + đặt 1 lô 5 board.
 
 ---
 
-## 8. W6 — Phát hành lên **Arduino Library Registry**  `P0`
+## 4. Track C — Web Server  `P1` *(đang dựng dần)*
 
-Quy trình (fork + PR):
+> Thầy gợi ý *"Máy chủ web sẽ cắm trực tiếp serial để đọc số liệu"* — **ta chọn không làm vậy** (lý do ở mục 1). Nếu GVHD vẫn muốn theo hướng đó, cần trao đổi lại ở buổi báo cáo GR2.
 
-- [ ] **W6-1** `library.properties` sạch và **nhất quán với tên repo**:
-      ```properties
-      name=WiFiConf
-      version=4.0.0
-      author=...
-      maintainer=... <email>
-      sentence=Một câu mô tả (<= 80 ký tự).
-      paragraph=Đoạn mô tả dài hơn (<= 200 ký tự).
-      category=Communication
-      url=https://github.com/<user>/<repo>
-      architectures=esp32,esp8266
-      includes=WiFiConf.h
-      depends=ArduinoJson
-      ```
-      ⚠️ Sample hiện tại có 3 lỗi sẽ fail lint:
-      - `includes=siot_core_lib.h` — file **không tồn tại** trong `src/`
-      - `depends=WiFi,Preferences` — `Preferences` **không phải** thư viện; `WiFi` là core API, không khai báo
-      - thiếu `depends=ArduinoJson` (đang dùng `ArduinoJson.h`), thiếu `LittleFS` (core)
-- [ ] **W6-2** `keywords.txt` (tab-separated: `KEYWORD1`/`KEYWORD2`/`LITERAL1`).
-- [ ] **W6-3** `LICENSE` (MIT) + header license trong từng file nguồn.
-- [ ] **W6-4** Ít nhất **2 examples** compile được trên cả `esp32` và `esp8266`.
-- [ ] **W6-5** Chạy local: `arduino-lint --compliance strict --library-manager submit --recursive`.
-- [ ] **W6-6** Tạo **GitHub Release** với tag `4.0.0` (khớp `version=`), ghi release notes.
-- [ ] **W6-7** Fork [`arduino/library-registry`](https://github.com/arduino/library-registry) → thêm **một dòng URL repo** vào file danh sách theo hướng dẫn trong README của registry (hiện là `repositories.txt`) → commit → **Pull Request**.
-      Lưu ý: PR cần URL **ổn định vĩnh viễn**; đừng đổi tên repo sau khi merge.
-- [ ] **W6-8** Theo dõi CI của registry (arduino-lint + kiểm tra trùng tên); xử lý feedback của maintainer.
-- [ ] **W6-9** Sau khi merge: kiểm chứng bằng `arduino-cli lib search WiFiConf` và `lib install WiFiConf`.
-- [ ] **W6-10** (Song song) publish **PlatformIO Registry** nếu muốn dùng ngay trong `platformio.ini`:
-      `pio pkg publish --owner <user> --type library` (cần `platformio.ini`/manifest + token).
-- [ ] **W6-11** Gắn **badge** (build, lint, version) + hướng dẫn cài trong README.
+- [ ] **C-1** Tách dashboard hiện tại khỏi PC Agent thành **Web Server riêng**, đọc dữ liệu qua REST/MQTT.
+- [ ] **C-2** Xác thực người dùng + phân quyền (admin / viewer).
+- [ ] **C-3** Trang **tổng quan rack**: công suất tức thời, biểu đồ 24 h, sự kiện đang mở.
+- [ ] **C-4** Trang **lịch sử**: lọc theo khoảng thời gian, `raw` vs `hourly`, xuất CSV.
+- [ ] **C-5** Trang **cấu hình**: đổi ngưỡng cảnh báo, chu kỳ lấy mẫu, hiển thị trạng thái COM đã nhớ.
+- [ ] **C-6** App Flutter (`smart_power_outlet_app/`) đọc từ Web Server — tái dùng service `mqtt_service.dart` đã có.
 
-**DoD:** `arduino-cli lib search <name>` thấy thư viện; `lib install` + compile example OK trên 2 kiến trúc.
+**DoD:** Web Server không cần quyền truy cập serial; chỉ cần HTTP client tới PC Agent.
 
 ---
 
-## 9. W7 — (Tuỳ chọn) ESP Component Registry  `P2`
+## 5. Track D — Tài liệu & báo cáo  `P1` *(chạy song song)*
 
-Dùng cho nhánh firmware `Smart_Power_Outlet_ESP/` (ESP-IDF thuần).
-
-- [ ] **W7-1** Đóng gói `components/wifi_conf/` với `idf_component.yml` (`version`, `dependencies`, `targets`).
-- [ ] **W7-2** Viết **shim** để dùng chung logic: tách phần "thuần C++ không phụ thuộc Arduino" (`ConfigStore`, state machine) thành `wifi_conf_core`; Arduino và IDF chỉ là 2 lớp adapter.
-      → Đây là cách duy nhất tránh maintain 2 bản logic song song.
-- [ ] **W7-3** `compote component upload --namespace <ns> --name wifi_conf --version 4.0.0` (cần token từ `idf.py`/espressif.com).
-- [ ] **W7-4** Cập nhật `idf_component.yml` của project để kéo component từ registry thay vì path local.
-- [ ] **W7-5** Kiểm tra hiển thị trên <https://components.espressif.com>.
-
-**DoD:** project IDF build sạch khi `idf_component.yml` trỏ registry.
+- [ ] **D-1** `docs/architecture/ARCHITECTURE.md` — mô hình 3 thành phần, luồng dữ liệu, ánh xạ thư mục. ✅ *đã tạo*
+- [ ] **D-2** `docs/architecture/diagrams/` — sơ đồ Mermaid + ASCII (kiến trúc tổng thể, nội bộ agent, vòng đời service). ✅ *đã tạo*
+- [ ] **D-3** `docs/operations/TROUBLESHOOTING.md` — lỗi thường gặp của service (đang là A-4-10).
+- [ ] **D-4** `docs/operations/INSTALL.md` — cài Windows Service + Linux daemon từ đầu.
+- [ ] **D-5** Báo cáo tiến độ GR2 Tuần 2 (docx) — mô hình 3 thành phần + kết quả test service.
+- [ ] **D-6** Cập nhật `ROADMAP.md` + `README.md` mỗi cuối tuần.
 
 ---
 
-## 10. W8 — Firmware đo điện: dòng, áp, nhiệt độ  `P0`
+## 6. Lịch dự kiến GR2 (4 tuần)
 
-**Phạm vi:** đo **dòng tiêu thụ** (2 dạng mạch), **điện áp**, **nhiệt độ qua NTC**.
-
-- [ ] **W8-1** Chốt **dải đo & độ phân giải** với GVHD:
-      | Đại lượng | Dải dự kiến | Sai số mục tiêu |
-      | --- | --- | --- |
-      | Dòng | 0–10 A (AC 220 V) | ±2 % |
-      | Áp | 0–260 V AC (hoặc 0–30 V DC) | ±1 % |
-      | Nhiệt độ | −20…+125 °C (NTC 10 k, B=3950) | ±1 °C |
-      ⚠️ Nếu đo **AC 220 V** thì **bắt buộc cách ly** (CT + optocoupler) — không dùng shunt trực tiếp.
-- [ ] **W8-2** Lớp `PowerMonitor` (API độc lập phần cứng):
-      ```cpp
-      bool  begin(const MeasConfig& cfg);   // lấy từ ConfigManager (W1)
-      void  loop();                          // lấy mẫu, tính RMS, không block
-      float currentRms();   float voltageRms();
-      float activePower();  float powerFactor();   // nếu đo AC
-      float energyWh();                          // tích luỹ, lưu flash mỗi 5 phút
-      float temperatureC();
-      ```
-- [ ] **W8-3** Lấy mẫu: 1 kHz+, cửa sổ **≥ 10 chu kỳ** lưới (200 ms @50 Hz) để RMS ổn định; đồng bộ zero-cross nếu có.
-- [ ] **W8-4** Hiệu chuẩn ADC: ESP32 → dùng `esp_adc_cal`/`analogReadMilliVolts`, tránh `analogRead` thô; oversample + trung bình trượt.
-- [ ] **W8-5** Lưu **hệ số hiệu chuẩn** vào `ConfigManager.params.meas` (không hard-code).
-- [ ] **W8-6** NTC: công thức **Beta** (`1/T = 1/T0 + (1/B)·ln(R/R0)`), có bảng tra/`Steinhart-Hart` nếu cần; xử lý chia 0 khi NTC hở/ngắn → trả `NAN` + cờ lỗi.
-- [ ] **W8-7** Task FreeRTOS riêng cho sampling (core 1 trên ESP32), publish giá trị qua queue — không gọi ADC trong `loop()` chính.
-- [ ] **W8-8** Báo cáo: MQTT topic `home/socket/telemetry` (JSON), và API `/api/meas` cho app.
-- [ ] **W8-9** Cảnh báo: quá áp / quá dòng / quá nhiệt → auto ngắt relay (an toàn) + event.
-
-**DoD:** so sánh với đồng hồ vạn năng/ampe kìm: sai số trong ngưỡng W8-1; chạy 24 h không trôi; nhiệt độ khớp nhiệt kế ±1 °C.
+| Tuần | Nội dung | Mốc bàn giao |
+|---|---|---|
+| **Tuần 2** | A-4-8, A-4-9 (test service thật), A-4-10, A-5-4, A-5-5, A-7-5, A-8-6, A-8-7, D-3, D-4 | **Service chạy 24/7 thật trên máy** + tài liệu vận hành |
+| **Tuần 3** | A-9 (hardening), A-10 (MQTT), C-1 (tách Web Server), D-5 | **MQTT uplink + Web Server tách riêng** |
+| **Tuần 4** | Test 24 h, C-2…C-5, D-6 | **Báo cáo GR2 + demo** |
+| **Trong GR2, sau Tuần 3** | **B-1** (thư viện WiFi provisioning) → **B-2** (firmware đo điện & relay) | Controller ESP32 chạy được, nối MQTT với PC Agent |
+| **Trong GR2, nếu còn thời gian** | B-3 (phần cứng EasyEDA) | Board đầu tiên về đến tay |
+| **Phần dở dang (nếu hết thời gian GR2)** | Phần chưa xong của Track B chuyển sang đầu **GR3** | Không mất gì — phần đã làm giữ nguyên |
 
 ---
 
-## 11. W9 — Hai dạng mạch đo dòng + hiệu chuẩn  `P1`
-
-- [ ] **W9-1** **Dạng 1 — Shunt + IC công suất (INA219/INA226), DC, high-side**
-      Ưu: chính xác, sẵn I2C, đo cả V/I/P. Nhược: chỉ DC, cần cách ly nếu đặt phía sơ cấp.
-- [ ] **W9-2** **Dạng 2 — Cảm biến Hall (ACS712/ACS758) hoặc CT (SCT-013)**, AC/DC tuỳ chọn
-      Ưu: **cách ly galvanic** (CT), đo AC. Nhược: cần op-amp khuếch đại + offset 2.5 V, nhiễu.
-- [ ] **W9-3** Cùng 1 API (`PowerMonitor`), chọn backend bằng `build_flags`:
-      `-D MEAS_BACKEND=INA226 | ACS712 | CT_ZMPT`
-- [ ] **W9-4** Script hiệu chuẩn (`tools/calibrate.py`): cho nhập 2 điểm chuẩn (0 A và 5 A) → tính hệ số → ghi vào config.
-- [ ] **W9-5** Bảng so sánh 2 dạng mạch (giá, dải đo, cách ly, sai số, độ phức tạp) để đưa vào báo cáo.
-- [ ] **W9-6** Test: tải điện trở (bóng đèn/quạt) ở 3 mức, ghi lại số đo vs ampe kìm.
-
-**DoD:** 2 backend cùng chạy, cùng API, có bảng so sánh + dữ liệu hiệu chuẩn.
-
----
-
-## 12. W10 — Phần cứng **EasyEDA** + khe cắm I2C  `P0`
-
-Hiện repo mới có KiCad schematic sơ bộ (`hardware/smart_outlet/smart_outlet.kicad_sch`) + tool ERC.
-
-- [ ] **W10-1** Vẽ lại **schematic EasyEDA** (yêu cầu của GVHD: "mạch in EasyEDA"), gồm:
-      - Nguồn: 220 VAC → HLK-PM01/PS 5 V → LDO 3.3 V (kèm fuse, MOV, X2 cap)
-      - Relay + driver (optocoupler/MOSFET) + snubber
-      - ESP32-C3/WROOM module, anten, nút BOOT/RESET
-      - Header nạp (UART) + header I2C
-- [ ] **W10-2** **Đề danh (silkscreen) rõ khe cắm I2C**: connector 4 chân chuẩn `3V3 / GND / SDA / SCL`, ghi nhãn **"I2C"** + đánh số chân + chiều (GND ở pin 1), dùng JST-XH 2.54 mm hoặc XH 1.25 mm.
-- [ ] **W10-3** Kéo 2 điện trở **pull-up 4.7 kΩ** cho SDA/SCL (hoặc jumper chọn), thêm **TVS/ESD** bảo vệ đường I2C.
-- [ ] **W10-4** Bố trí: khoảng cách **creepage/clearance ≥ 3 mm** giữa phần cao áp và低压; slot cắt trên PCB nếu cần; không route I2C dưới relay.
-- [ ] **W10-5** Chừa **test point** cho: 3V3, GND, SDA, SCL, relay coil, ADC in.
-- [ ] **W10-6** 2 biến thể bo đo (dạng 1 / dạng 2) dùng chung connector I2C để cắm rời.
-- [ ] **W10-7** BOM + giá thành, chọn linh kiện **có sẵn ở VN** (hoặc JLCPCB basic parts).
-- [ ] **W10-8** Kiểm tra ERC/DRC, xuất Gerber + BOM + Pick&Place, đặt thử 1 lô 5 board.
-- [ ] **W10-9** Đồng bộ lại KiCad ↔ EasyEDA (chọn 1 nguồn sự thật duy nhất, tránh 2 bản lệch).
-
-**DoD:** Gerber pass DRC, board mẫu hàn xong chạy được, silkscreen đọc được "I2C".
-
----
-
-## 13. W11 — Tích hợp & demo  `P0`
-
-- [ ] **W11-1** Thay `wifi_prov.*` trong `Smart_power_outlet_PIO` bằng thư viện mới (`lib_deps` trỏ git/tag).
-- [ ] **W11-2** App Flutter: màn hình cấu hình WiFi (qua portal + serial), màn hình telemetry (I, U, P, °C).
-- [ ] **W11-3** Đồng bộ ESP-IDF (`Smart_Power_Outlet_ESP`) dùng chung core (W7-2).
-- [ ] **W11-4** Kịch bản demo GR2/GR3:
-      1. Board mới → tự phát AP → nhập 5 mạng + `dev_id` + `mac`
-      2. Rút router → tự reconnect, xoay SSID
-      3. Bật tải → app hiện dòng/áp/nhiệt
-      4. Quá nhiệt giả lập → tự ngắt relay
-      5. Reset 3 s (giữ nút) → xoá cấu hình → về AP
-- [ ] **W11-5** README tổng + sơ đồ khối + video demo.
-
----
-
-## 14. Câu hỏi cần chốt với GVHD
-
-1. **W3**: "thư viện tương tự nhưng qua serial" là **repo/thư viện riêng** hay **module mở rộng** của cùng thư viện?
-2. **W1**: `ssid_interval` trong `checkAndEstablishWiFiConnection()` — là *số lần thử/1 SSID* hay *số giây/1 SSID*? (code hiện tại đếm theo tick, không rõ nghĩa)
-3. **W8**: đo **AC 220 V** hay **DC**? (quyết định có cần cách ly / CT hay không)
-4. **W9**: 2 dạng mạch đo dòng cụ thể là gì — *shunt+INA226* vs *Hall/CT*, hay GVHD đã chỉ định linh kiện khác?
-5. **W10**: "mạch in easylab" — là **EasyEDA** (web, JLC) hay **EasyLab** của trường? Có ràng buộc kích thước/linh kiện kho trường?
-6. Deadline từng mốc GR2 / GR3 để xếp lịch.
-7. Có cần **bảo mật** cho AP cấu hình (password) hay để mở cho tiện demo?
-
----
-
-## 15. Rủi ro & đối sách
+## 7. Rủi ro & đối sách
 
 | Rủi ro | Mức | Đối sách |
-| --- | --- | --- |
-| Registry từ chối PR vì tên/`library.properties`/lint | Cao | W0 + W6 chạy `arduino-lint` strict trước khi tạo PR; chuẩn bị sẵn 1–2 vòng sửa |
-| ESP32-P4 không có WiFi native (qua C6 ESP-Hosted) | Cao | Xác nhận sớm; nếu vướng thì **P4 chỉ làm board đo**, WiFi dùng WROOM/C3 |
-| Dính 220 V khi prototype | Cao | Cách ly, cầu chì, hộp nhựa, không hàn khi cắm điện; dùng biến áp cách ly khi test |
-| Trôi hệ số hiệu chuẩn theo nhiệt độ | TB | Hiệu chuẩn 2 điểm + bù nhiệt, ghi log để phát hiện trôi |
-| Viết 2 bản logic Arduino/IDF lệch nhau | TB | Tách `wifi_conf_core` thuần C++ (W7-2) |
-| Mài mòn flash do ghi `ok` liên tục | TB | Chỉ commit khi dirty (W1-4) |
-| Hết thời gian trước GR3 | TB | Ưu tiên P0 trước; W7/W9-5/W10-6 có thể cắt |
+|---|---|---|
+| GVHD vẫn muốn Web Server cắm serial trực tiếp | Cao | **Trao đổi lại ở buổi GR2**, trình bày rõ xung đột exclusive-lock của COM; đề xuất phương án "serial ↔ HTTP bridge" nếu thầy vẫn muốn |
+| Service không đọc được COM dưới LocalSystem (Session 0) | Cao | Test sớm (A-4-9); nếu vướng → chạy service dưới **tài khoản người dùng** (`--username/--password` trong `HandleCommandLine`) hoặc dùng `LocalService` |
+| Thiết bị mất nguồn AC → im lặng, không phản hồi UART | Trung bình | Đã có thông báo nguyên nhân trong log (A-3-9) + `DEVICE_OFFLINE` event |
+| Đổi số COM sau mỗi lần rút/cắm | Trung bình | Đã xử lý bằng `usb_location` (A-3-2) |
+| Số lượng PZEM tăng lên (thầy sẽ mua thêm 1 module dự phòng) | Trung bình | Thiết kế `meter_id` đã hỗ trợ nhiều meter; giai đoạn 2 sẽ cho agent quét nhiều cổng song song |
+| Dừng ESP32 quá lâu → GVHD mất dấu hướng | Trung bình | Track B **vẫn nằm trong GR2** (chỉ lùi sau Track A) → không bị "biến mất" khỏi báo cáo; giữ nguyên thiết kế để làm tiếp ngay |
+| Hết thời gian GR2 | Trung bình | Cắt theo thứ tự: A-10 (MQTT) → C-2…C-6 → B-3 (phần cứng). **Track A + B-1/B-2** vẫn đủ để báo cáo; phần dở dang của Track B mới chuyển sang GR3 |
 
 ---
 
-## 16. Lịch đề xuất (6 tuần)
+## 8. Câu hỏi cần chốt với GVHD
 
-| Tuần | Nội dung | Mốc |
-| --- | --- | --- |
-| 1 | W0, W1 (schema + store + test native) | Repo thư viện sạch, CI xanh |
-| 2 | W4 (state machine) + W2 (portal) | WiFi tự phục hồi ổn định 24 h |
-| 3 | W3 (serial) + W5 (MAC) | Cấu hình được 2 đường |
-| 4 | W6 (publish) + demo nội bộ | **PR registry** + tag 4.0.0 |
-| 5 | W8 + W9 (đo điện, 2 backend) | Số đo khớp ampe kìm |
-| 6 | W10 (EasyEDA, gerber) + W11 (tích hợp) | **GR3 demo** |
-
-> Ghi chú: phần nào GVHD đánh giá cao hơn (ví dụ mạch in) thì dời W10 lên tuần 4 và lùi W6 lại — W6 không phụ thuộc phần cứng.
+1. **Mô hình 3 thành phần** — thầy xác nhận mô hình này đúng ý chưa? Đặc biệt: Web Server **không** cắm serial mà đọc từ PC Agent.
+2. **Phạm vi GR2** — thầy có cần thêm tính năng gì cho PC Agent trong GR2 không (ví dụ: xuất CSV, gửi email cảnh báo, hỗ trợ nhiều PZEM)?
+3. **Cách chạy thực tế** — trong tủ rack, PC Agent chạy trên **Windows Server** hay **Linux**? (Ảnh hưởng việc hoàn thiện A-4 hay A-5 trước.)
+4. **ESP32 trong GR2** — em định làm Track B **sau Track A** (B-1 thư viện WiFi → B-2 firmware đo điện & relay → B-3 phần cứng), vẫn kịp trong GR2. Thầy thấy thứ tự này ổn chứ?
+5. **Bảo mật API** — có yêu cầu đặt mật khẩu cho dashboard / API không?
+6. **Báo cáo GR2 Tuần 2** — thầy muốn nhấn mạnh phần nào: tính "service" hay tính "mô hình tổng thể"?

@@ -5,8 +5,8 @@ import time
 
 import serial
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from pzem004t import CMD_READ_HOLDING, CMD_READ_INPUT, build_read_frame
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
+from pc_agent.drivers.pzem004t import CMD_READ_HOLDING, CMD_READ_INPUT, build_read_frame
 
 ADDRESSES = (0x01, 0x02, 0x03, 0x10, 0xF7, 0xF8, 0xFE, 0xFF)
 FUNCTIONS = (CMD_READ_INPUT, CMD_READ_HOLDING)

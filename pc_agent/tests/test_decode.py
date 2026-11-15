@@ -18,9 +18,9 @@ Gia tri mong doi:
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
-from pzem004t import Pzem004T, crc16_modbus  # noqa: E402
+from pc_agent.drivers.pzem004t import Pzem004T, crc16_modbus  # noqa: E402
 
 EXAMPLE_DATA = bytes([
     0x08, 0x98, 0x03, 0xE8, 0x00, 0x00, 0x08, 0x98, 0x00, 0x00,

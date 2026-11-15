@@ -4,12 +4,18 @@
 # ============================================================================
 
 # --- Bí mật / thông tin cá nhân ------------------------------------------------
+# File `secrets.h` gốc đã từng được commit và push lên repo PUBLIC
+# (`github.com/CatKod/Smart_Power_Outlet`) → credential MQTT bị lộ.
+# Lịch sử git đã được scrub bằng `git filter-repo`. Các rule dưới đây giữ cho
+# lần sau không ai vô tình commit lại. Mẫu thay thế nằm ở `*.h.example`.
 Smart_Power_Outlet_ESP/main/secrets.h
 **/secrets.h
 **/credentials.json
 **/.env
 **/.env.*
 !.env.example
+# Mẫu (.example) PHẢI được track — chỉ file thật mới bị ignore.
+!**/secrets.h.example
 
 # --- Artifact build của ESP-IDF ------------------------------------------------
 # build/ chính + các thư mục build tạm dùng để verify (build_verify55, build_verify60...)
@@ -112,10 +118,81 @@ Desktop.ini
 .AppleDouble
 .LSOverride
 
+# --- JVM crash log (Flutter Android) ------------------------------------------
+hs_err_pid*.log
+replay_pid*.log
+*.hprof
+
+# --- Flutter / Dart: build + plugin --------------------------------------------
+# (phần còn lại đã nằm trong smart_power_outlet_app/.gitignore)
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/ephemeral/
+**/Generated.xcconfig
+**/flutter_export_environment.sh
+**/Pods/
+**/Podfile.lock
+**/.symlinks/
+
+# --- Android / Gradle -----------------------------------------------------------
+**/android/.gradle/
+**/android/local.properties
+**/android/key.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/*.jks
+**/*.keystore
+
+# --- Python: cache, test, build --------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.egg
+pip-wheel-metadata/
+
+# --- Test trình duyệt (Playwright) ------------------------------------------------
+**/playwright-report/
+**/test-results/
+**/blob-report/
+**/playwright/.cache/
+
+# --- Backup & file tạm của công cụ ------------------------------------------------
+*.orig
+*.rej
+*.patch
+*.diff
+*.tmp-*
+*.old
+*.save
+*.swp.old
+
 # --- Tool cục bộ / MCP / công cụ nội bộ ----------------------------------------
 .serial_mcp/
 .agy/
 .agentmemory/
+.cursor/
+
+# --- Working directory nghiên cứu (Gemini briefs, findings, log) -----------------
+# Brief/findings là tài liệu làm việc tạm, không track; bản tổng hợp đã vào
+# docs/architecture/ và ROADMAP.md.
+.research/
+
 
 # --- Kết quả render tài liệu (sinh ra khi kiểm tra .docx) ----------------------
 docs/_render/
