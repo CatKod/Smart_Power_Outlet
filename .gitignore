@@ -228,3 +228,7 @@ pc_agent/logs/
 .coverage.*
 htmlcov/
 coverage.xml
+
+# --- File tạm của Word/Excel (~$doc.docx) --------------------------------------
+~$*
+.~lock.*

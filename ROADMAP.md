@@ -1,8 +1,12 @@
 # Smart Power Outlet — Lộ trình công việc
 
-> **Cập nhật: 2026-11-15** · Trạng thái: **GR2 Tuần 2** · Lần sửa này viết lại toàn bộ lộ trình theo phản hồi của GVHD (Thầy Nguyễn Đức Tiến) trong buổi nộp báo cáo GR2 Tuần 1.
+> **Cập nhật: 2026-11-17** · Trạng thái: **GR2 Tuần 2 — Giai đoạn 1 đóng, chờ test máy thật** · Lần sửa trước (2026-11-15) viết lại toàn bộ lộ trình theo phản hồi của GVHD (Thầy Nguyễn Đức Tiến) trong buổi nộp báo cáo GR2 Tuần 1.
 >
 > **Thay đổi lớn so với lộ trình cũ:** trọng tâm chuyển từ *thư viện Arduino WiFi* sang **Electronic PC Agent** — một dịch vụ nền (Windows Service / Linux daemon) chạy 24/7 trên máy chủ, giám sát năng lượng PZEM-004T cho một tổ hợp máy chủ trong tủ rack. Phần ESP32 vẫn nằm trong **phạm vi GR2** nhưng bị **lùi xuống sau** (ưu tiên `P1`, làm sau khi Track A đạt DoD) theo chỉ đạo *"em có thì hoãn cái esp32 lại"* của thầy.
+>
+> 📌 **Cập nhật 2026-11-17 — nhánh thư viện dùng chung đã ra mắt.** Thư viện C99 **`embedded-iot-toolkit`** (repo riêng `CatKod/embedded-iot-toolkit`) đã được **đăng ký thành công trên cả hai registry**: [Arduino Library Manager](https://www.arduinolibraries.info/libraries/embedded-io-t-toolkit) và [ESP-IDF Component Registry](https://components.espressif.com/components/catkod/embedded-iot-toolkit/versions/1.0.0). Xem **Track E — mục 5**.
+>
+> 📌 **Cập nhật 2026-11-17 — Giai đoạn 1 đã đóng.** Toàn bộ 12 task `P0` của Giai đoạn 1 đã xong (A-4-10, A-5-5, A-6-6, A-7-6/7, A-8-6/7, A-9-1..4, D-3, D-4). Phần còn lại của Tuần 2 là **Giai đoạn 2 — test trên máy thật** (A-4-8/9, A-7-5, A-9-5/6, A-5-4), vốn **phụ thuộc phần cứng** (cắm USB-TTL, reboot máy). Báo cáo: [`docs/reports/report_week2.docx`](docs/reports/report_week2.docx).
 
 ---
 
@@ -151,7 +155,7 @@ Thư mục: `pc_agent/`. Đây là sản phẩm chính của GR2.
 - [x] **A-6-3** Bảng `events` (cảnh báo / sự cố) với `resolved_at` để biết sự kiện nào đang mở.
 - [x] **A-6-4** Chế độ **WAL** + `synchronous=NORMAL` → đọc được đồng thời khi đang ghi.
 - [x] **A-6-5** Tổng hợp theo giờ chạy mỗi 5 phút; dọn dữ liệu cũ mỗi giờ.
-- [ ] **A-6-6** ⚠️ Test: chạy 24 h liên tục, không rò rỉ disk, kích thước DB ổn định. Có script `pc_agent/tools/soak_test.py` chạy `--simulate` 24 h, đo kích thước DB/WAL theo chu kỳ.
+- [ ] **A-6-6** ⚠️ Test: chạy 24 h liên tục, không rò rỉ disk, kích thước DB ổn định. Có script `pc_agent/tools/soak_test.py` chạy `--simulate` 24 h, đo kích thước DB/WAL theo chu kỳ. 🔶 *script + tham số ngưỡng đã xong; **còn lại: chạy 24 h thật**.*
 
 **DoD:** DB 1 file, tự dọn theo retention, đọc/ghi song song không lỗi.
 
@@ -161,6 +165,12 @@ Thư mục: `pc_agent/`. Đây là sản phẩm chính của GR2.
 > 3. `deploy/smart-power-agent.service` — file viết theo **cú pháp XML** thay vì **INI** của systemd → `systemd` không load được. Đã viết lại đúng chuẩn.
 >
 > Kết quả sau khi sửa: DB/WAL/SHM ổn định, WAL được truncate về 0, RSS phẳng (+0.3 %).
+>
+> ✅ **2026-11-17 — phần mềm của A-6-6 đã xong:** script `soak_test.py` đã có đủ cờ ngưỡng để tự kết luận PASS/FAIL — `--db-max-mb`, `--wal-max-mb`, `--total-max-mb`, `--rss-max-mb`, `--rss-growth-pct` — và xuất báo cáo JSON + CSV.
+>
+> 🔶 **Còn lại — chạy 24 h thật** (cần máy bật liên tục, chưa làm):
+> `python pc_agent/tools/soak_test.py --duration 86400 --interval 300`
+>
 > **Phần còn lại:** chạy thật 24 h cần máy bật liên tục → `python pc_agent/tools/soak_test.py --duration 86400 --interval 300`.
 
 ### 2.7 A-7 — Rule Engine & ghi nhận sự cố  `P0` ✅ *đã hiện thực*
@@ -270,12 +280,63 @@ Thầy nói rõ: *"Các sự cố phát hiện được và ghi lại là rất 
 
 ## 5. Track D — Tài liệu & báo cáo  `P1` *(chạy song song)*
 
-- [ ] **D-1** `docs/architecture/ARCHITECTURE.md` — mô hình 3 thành phần, luồng dữ liệu, ánh xạ thư mục. ✅ *đã tạo*
-- [ ] **D-2** `docs/architecture/diagrams/` — sơ đồ Mermaid + ASCII (kiến trúc tổng thể, nội bộ agent, vòng đời service). ✅ *đã tạo*
+- [x] **D-1** `docs/architecture/ARCHITECTURE.md` — mô hình 3 thành phần, luồng dữ liệu, ánh xạ thư mục.
+- [x] **D-2** `docs/architecture/diagrams/` — sơ đồ Mermaid + ASCII (kiến trúc tổng thế, nội bộ agent, vòng đời service).
 - [x] **D-3** `docs/operations/TROUBLESHOOTING.md` — lỗi thường gặp của service (đang là A-4-10).
 - [x] **D-4** `docs/operations/INSTALL.md` — cài Windows Service + Linux daemon từ đầu.
-- [ ] **D-5** Báo cáo tiến độ GR2 Tuần 2 (docx) — mô hình 3 thành phần + kết quả test service.
-- [ ] **D-6** Cập nhật `ROADMAP.md` + `README.md` mỗi cuối tuần.
+- [x] **D-5** Báo cáo tiến độ GR2 Tuần 2 (docx) — mô hình 3 thành phần + kết quả test service. ✅ *đã tạo:* [`docs/reports/report_week2.docx`](docs/reports/report_week2.docx)
+- [x] **D-6** Cập nhật `ROADMAP.md` + `README.md` mỗi cuối tuần. ✅ *đã cập nhật 2026-11-17*
+- [x] **D-7** `docs/operations/HARDWARE_PREP.md` — chuẩn bị phần cứng & môi trường test cho Giai đoạn 2 (A-4-8/9, A-7-5, A-9-5/6, A-5-4).
+
+---
+
+## 5.1 Track E — Thư viện dùng chung `embedded-iot-toolkit`  `P1` ✅ *đã phát hành v1.0.0*
+
+> **Vì sao tách thành track riêng:** bài toán "giao thức lặp lại" (đọc thanh ghi, checksum, timer không chặn, codec) là **giống nhau** giữa PC Agent (Python), firmware ESP32 (C) và tầng Web/Flutter (Dart). Thay vì viết lại 3 lần, tách ra **thư viện C99 thuần** để dùng lại ở mọi tầng. Thư viện nằm ở repo riêng: [`CatKod/embedded-iot-toolkit`](https://github.com/CatKod/embedded-iot-toolkit).
+
+### 5.1.1 E-1 — Đăng ký trên cả 2 registry  `P1` ✅ *đã xong (2026-11-16)*
+
+- [x] **E-1-1** Cấu trúc theo **Arduino Library Specification 1.5** (Rev 2.2): `library.properties`, `keywords.txt`, `src/` (umbrella header `EmbeddedIoTToolkit.h`), `examples/*.ino`.
+- [x] **E-1-2** Tuân thủ **ESP-IDF Component Registry**: `idf_component.yml` (`version: "1.0.0"`, `dependencies`, `targets`, `files.exclude`).
+- [x] **E-1-3** Kiểm tra tuân thủ: `arduino-lint --compliance strict --library-manager submit` → **0 ERROR**.
+- [x] **E-1-4** PR đăng ký Arduino: [`arduino/library-registry#9655`](https://github.com/arduino/library-registry/pull/9655) → **MERGED** (2026-11-16 02:45 UTC).
+- [x] **E-1-5** Publish ESP-IDF: `compote component upload --name embedded-iot-toolkit --namespace CatKod` → **thành công**.
+- [x] **E-1-6** Kiểm chứng end-to-end: dựng project ESP-IDF mới, khai báo `catkod/embedded-iot-toolkit: "^1.0.0"`, `idf.py build` (target `esp32s3`) → **PASS**, `dependencies.lock` xác nhận `source: {type: service, registry_url: https://components.espressif.com/}`.
+
+### 5.1.2 E-2 — Nội dung thư viện  `P1` ✅ *đã xong*
+
+| Module | Nội dung | Cổng |
+|---|---|---|
+| `ekt_soft_timer` | Timer không chặn, không `delay()` | `src/ekt_soft_timer.c` |
+| `ekt_frame` | Giao thức khung serial có checksum XOR, an toàn ISR | `src/ekt_frame.c` |
+| `ekt_can_codec` | Codec định danh CAN 2.0B (11/29 bit) | `src/ekt_can_codec.c` |
+| `ekt_sensor` | Trợ giúp cảm biến + phát hiện dữ liệu cũ (stale) | `src/ekt_sensor.c` |
+
+- [x] **E-2-1** Lõi thuần C99: **không header nhà cung cấp**, **không cấp phát động**, không phụ thuộc RTOS.
+- [x] **E-2-2** Tầng port: `port/posix` (test trên PC) · `port/esp32` (ESP-IDF) · `port/stm32` · `src/port_arduino` (Arduino, tự biên dịch đệ quy).
+- [x] **E-2-3** Bố cục **không nhân bản header**: header công khai ở `src/*.h`, chỉ phần khác biệt nằm trong port.
+- [x] **E-2-4** `files.exclude` trong `idf_component.yml` loại `.ino` của Arduino + port Arduino khỏi gói ESP-IDF (vì ESP-IDF tự dò `examples/` theo thư mục → `.ino` sẽ làm hỏng).
+
+### 5.1.3 E-3 — CI & phát hành  `P1` ✅ *đã xong*
+
+- [x] **E-3-1** 4 job GitHub Actions, tất cả **xanh**: `Host unit tests (gcc)` · `Host unit tests (clang)` · `Arduino Library Specification` · `ESP-IDF component build`.
+- [x] **E-3-2** Cờ `-std=c99 -Wall -Wextra -Wpedantic -Werror` → cả 2 compiler đều **không cảnh báo**.
+- [x] **E-3-3** Job ESP-IDF clone `v5.5.3`, `install.sh esp32s3`, build example `esp32_timer`.
+- [x] **E-3-4** Tag `v1.0.0` + GitHub Release `v1.0.0` (cần cho Arduino indexer nhận repo).
+- [x] **E-3-5** Lỗi CI đã sửa: `_POSIX_C_SOURCE` cho `clock_gettime`/`nanosleep` dưới `-std=c99` · `arduino-lint` phải truyền đường dẫn tuyệt đối (`$GITHUB_WORKSPACE`) · `espressif/setup-esp@v2` không tồn tại → clone ESP-IDF trực tiếp.
+
+**Kết quả:**
+- Arduino Library Manager → https://www.arduinolibraries.info/libraries/embedded-io-t-toolkit
+- ESP-IDF Component Registry → https://components.espressif.com/components/catkod/embedded-iot-toolkit/versions/1.0.0
+
+**DoD:** cài được từ cả 2 registry bằng 1 dòng lệnh, build sạch trên ≥ 2 toolchain, không cần sửa tay.
+
+### 5.1.4 E-4 — Hướng tiếp theo  `P2`
+
+- [ ] **E-4-1** Dùng `ekt_frame` cho **giao thức giữa PC Agent ↔ ESP32** (thay vì giao thức riêng).
+- [ ] **E-4-2** Dùng `ekt_soft_timer` cho task FreeRTOS trong firmware ESP32-S3 (thay vì `vTaskDelay` rời rạc).
+- [ ] **E-4-3** Thêm module `ekt_modbus` vào thư viện (CRC-16 Modbus hiện nằm trong PC Agent bằng Python → cần bản C cho firmware).
+- [ ] **E-4-4** Phát hành `v1.1.0` khi Track B (firmware ESP32-S3) bắt đầu dùng thư viện.
 
 ---
 
@@ -283,7 +344,7 @@ Thầy nói rõ: *"Các sự cố phát hiện được và ghi lại là rất 
 
 | Tuần | Nội dung | Mốc bàn giao |
 |---|---|---|
-| **Tuần 2** | Giai đoạn 1 (12 task P0: A-8-6/7, A-9-1..4, A-7-6/7, A-5-5, A-6-6, A-4-10, D-4) + Giai đoạn 2 (A-4-8/9, A-7-5, A-9-5/6, A-5-4) | **Service chạy 24/7 thật trên máy** + tài liệu vận hành + dashboard có biểu đồ |
+| **Tuần 2** 🔶 *đã xong phần mềm* | Giai đoạn 1 (12 task P0: A-8-6/7, A-9-1..4, A-7-6/7, A-5-5, A-6-6, A-4-10, D-4) + Giai đoạn 2 (A-4-8/9, A-7-5, A-9-5/6, A-5-4) | **Service chạy 24/7 thật trên máy** + tài liệu vận hành + dashboard có biểu đồ |
 | **Tuần 3** | A-10 (MQTT), C-1 (tách Web Server), D-5 | **MQTT uplink + Web Server tách riêng** |
 | **Tuần 4** | Test 24 h, C-2…C-5, D-6, **B-4-0…B-4-4** (firmware ESP32-S3) | **Báo cáo GR2 + demo** + firmware S3 chạy được |
 | **Trong GR2, sau Tuần 4** | **B-5** (vòng lặp khép kín) → **B-3** (phần cứng EasyEDA) | Controller điều khiển relay qua MQTT, đo được PZEM #2 |

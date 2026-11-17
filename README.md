@@ -6,7 +6,7 @@ Hệ thống giám sát năng lượng cho **tổ hợp máy chủ trong tủ ra
 
 | # | Thành phần | Chạy trên | Trách nhiệm | Trạng thái |
 |---|---|---|---|---|
-| **1** | **Electronic PC Agent** | Máy chủ giám sát trong tủ rack | Đọc PZEM-004T liên tục, tự dò COM, lưu time-series, đánh giá ngưỡng & ghi sự cố, phục vụ REST API | **P0 — đang làm** |
+| **1** | **Electronic PC Agent** | Máy chủ giám sát trong tủ rack | Đọc PZEM-004T liên tục, tự dò COM, lưu time-series, đánh giá ngưỡng & ghi sự cố, phục vụ REST API | **P0 — Giai đoạn 1 xong, chờ test máy thật** |
 | **2** | **Central IoT Controller** | Vi điều khiển **ESP32-S3 N16R8** (ESP-IDF 5.5.3) | Cấu hình & duy trì WiFi, subscriber MQTT, điều khiển relay, đo điện PZEM #2, giám sát an toàn | **P1 — làm sau Track A, vẫn trong GR2** |
 | **3** | **Web Server** | Máy chủ web trung tâm | Giao diện web + API người dùng, báo cáo, lịch sử sự kiện | **P1 — đang dựng dần** |
 
@@ -59,7 +59,22 @@ Chi tiết: [`pc_agent/README.md`](pc_agent/README.md)
 | [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) | Mô hình 3 thành phần, kiến trúc nội bộ PC Agent, cơ chế service, ánh xạ thư mục |
 | [`docs/architecture/diagrams/`](docs/architecture/diagrams/) | Sơ đồ Mermaid + bản ASCII (kiến trúc tổng thể, nội bộ agent, vòng đời service) |
 | [`pc_agent/README.md`](pc_agent/README.md) | Hướng dẫn cài đặt, cấu hình, API, xử lý sự cố |
+| [`docs/operations/INSTALL.md`](docs/operations/INSTALL.md) | Cài PC Agent thành Windows Service / systemd daemon từ đầu |
+| [`docs/operations/TROUBLESHOOTING.md`](docs/operations/TROUBLESHOOTING.md) | 11 lỗi thường gặp + lệnh chẩn đoán |
+| [`docs/operations/HARDWARE_PREP.md`](docs/operations/HARDWARE_PREP.md) | Chuẩn bị phần cứng cho Giai đoạn 2 (test máy thật) |
+| [`docs/reports/report_week2.docx`](docs/reports/report_week2.docx) | Báo cáo GR2 Tuần 2 — Giai đoạn 1 (hardening) + đăng ký thư viện |
 | `PZEM-004T_Huong_Dan_Giao_Thuc.docx` | Tài liệu gốc của module đo điện |
+
+## Thư viện dùng chung — `embedded-iot-toolkit`
+
+Thư viện C99 thuần tách ra để dùng lại ở nhiều tầng (PC Agent, firmware ESP32, tầng Web):
+timer không chặn, giao thức khung serial có checksum, codec CAN 2.0B, trợ giúp cảm biến.
+
+| Registry | Địa chỉ |
+|---|---|
+| Arduino Library Manager | https://www.arduinolibraries.info/libraries/embedded-io-t-toolkit |
+| ESP-IDF Component Registry | https://components.espressif.com/components/catkod/embedded-iot-toolkit/versions/1.0.0 |
+| Mã nguồn | https://github.com/CatKod/embedded-iot-toolkit |
 
 ## Phần cứng
 
