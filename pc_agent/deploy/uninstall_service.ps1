@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Gỡ PC Agent khỏi Windows Service.
 

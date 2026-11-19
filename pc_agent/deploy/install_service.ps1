@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Cài PC Agent thành Windows Service (chạy 24/7, không cần đăng nhập).
 
@@ -84,9 +84,34 @@ if (-not (Test-Path "$VenvDir\Scripts\python.exe")) {
     python -m venv $VenvDir
 }
 $PyExe = Join-Path $VenvDir "Scripts\python.exe"
-& $PyExe -m pip install --upgrade pip --quiet
-& $PyExe -m pip install "pyserial>=3.5" "pywin32>=306" --quiet
-& $PyExe -m pip install -e $DestPkg --quiet
+
+# --- Helper: chạy lệnh native, KHÔNG để stderr của pip làm fail script -----
+# PowerShell 5.1 coi output trên stderr của một native command là lỗi
+# (NativeCommandError). `pip` in cảnh báo "project.license ... is deprecated"
+# ra stderr dù cài đặt thành công → với $ErrorActionPreference="Stop" sẽ throw.
+# Ta kiểm tra exit code thật của lệnh thay vì dựa vào stderr.
+function Invoke-Native {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$Arguments = @(),
+        [string]$What = "lệnh"
+    )
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $FilePath @Arguments
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+    if ($code -ne 0) {
+        throw "$What thất bại (exit code $code): $FilePath $($Arguments -join ' ')"
+    }
+}
+
+Invoke-Native -FilePath $PyExe -Arguments @("-m", "pip", "install", "--upgrade", "pip", "--quiet") -What "Cập nhật pip"
+Invoke-Native -FilePath $PyExe -Arguments @("-m", "pip", "install", "pyserial>=3.5", "pywin32>=306", "--quiet") -What "Cài pyserial/pywin32"
+Invoke-Native -FilePath $PyExe -Arguments @("-m", "pip", "install", "-e", $DestPkg, "--quiet") -What "Cài package pc_agent"
 Write-Host "      Python: $PyExe"
 
 # Đường dẫn script sẽ là ImagePath của service
@@ -147,8 +172,7 @@ if ($existing) {
 }
 
 # --startup=delayed : SERVICE_DELAYED_AUTO_START_INFO
-& $PyExe $SvcScript --startup=delayed install
-if ($LASTEXITCODE -ne 0) { throw "Đăng ký service thất bại (exit $LASTEXITCODE)." }
+Invoke-Native -FilePath $PyExe -Arguments @($SvcScript, "--startup=delayed", "install") -What "Đăng ký service"
 
 # --- 5. Cấu hình recovery ----------------------------------------------------
 if (-not $SkipRecovery) {
