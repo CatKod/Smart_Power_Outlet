@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smartoutlet-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-19",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "observability": {
+    "enabled": true
+  },
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "f5edb60f2e61475e85778d27722e0b71"
+    }
+  ],
+  "vars": {
+    "MQTT_HOST": "broker.hivemq.com",
+    "MQTT_PORT": "1883",
+    "MQTT_TOPIC": "hoangkimvinh"
+  }
+}

@@ -1,0 +1,18 @@
+# Wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Build output
+dist/
+
+# Local secrets — tuyệt đối không commit
+*.dev.vars
+.env
+.env.*
+*.token.txt
+
+node_modules/
+
+# Wrangler dry-run / local state
+.wrangler-dryrun/

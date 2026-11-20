@@ -193,6 +193,12 @@ pip-wheel-metadata/
 # docs/architecture/ và ROADMAP.md.
 .research/
 
+# --- Working directory nội bộ (checkpoint, script probe, log test) --------------
+# Toàn bộ .work/ là tài liệu làm việc tạm: STATE.md, script probe MQTT/OAuth,
+# output test, file .txt/.json sinh ra khi chạy. KHÔNG track.
+# Lưu ý: .work/STATE.md đã từng được track — đã gỡ khỏi index bằng `git rm --cached`.
+.work/
+
 
 # --- Kết quả render tài liệu (sinh ra khi kiểm tra .docx) ----------------------
 docs/_render/
